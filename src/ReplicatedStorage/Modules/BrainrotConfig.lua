@@ -1,20 +1,27 @@
 -- BrainrotConfig
--- Clases: Runner, Tank, Thief | Rarezas: Normal, Gold, Diamond
+-- Clases: Runner, Tank, Thief  |  Rarezas: Normal, Gold, Diamond
 -- Ubicación: ReplicatedStorage > Modules > BrainrotConfig (ModuleScript)
+--
+-- Balance notes (stats finales = base × mult):
+--   Runner Normal:  HP  45, Spd 18, Dmg  8  → muere en ~2.5s con 1 laser
+--   Tank   Normal:  HP 200, Spd  7, Dmg 30  → muere en ~11s  con 1 laser
+--   Tank   Diamond: HP 700, Spd  8, Dmg 66  → necesita varias defensas
+--   Boss (Tank Diamond ×5): HP 3500          → necesita todo el setup
 
 local BrainrotConfig = {}
 
 -----------------------------------------------------------------------
--- CLASES (stats base a rareza Normal)
+-- CLASES (stats base, asumiendo rareza Normal)
 -----------------------------------------------------------------------
 BrainrotConfig.Classes = {
 	Runner = {
 		baseHP        = 45,
 		baseSpeed     = 18,
-		baseDamage    = 8,   -- daño a barrera por impacto
+		baseDamage    = 8,
 		size          = Vector3.new(1.6, 1.6, 1.6),
 		shape         = Enum.PartType.Ball,
 		description   = "Rapido y fragil, llega antes que nadie",
+		stealTimeMult = 1.0,
 	},
 	Tank = {
 		baseHP        = 200,
@@ -22,7 +29,8 @@ BrainrotConfig.Classes = {
 		baseDamage    = 30,
 		size          = Vector3.new(3.2, 3.2, 3.2),
 		shape         = Enum.PartType.Block,
-		description   = "Lento, absorbe mucho daño",
+		description   = "Lento, absorbe mucho dano",
+		stealTimeMult = 1.0,
 	},
 	Thief = {
 		baseHP        = 70,
@@ -31,9 +39,12 @@ BrainrotConfig.Classes = {
 		size          = Vector3.new(1.8, 1.8, 1.8),
 		shape         = Enum.PartType.Block,
 		description   = "Si infiltra la base, roba capturas extra rapido",
-		stealTimeMult = 0.5, -- roba al 50% del tiempo normal
+		stealTimeMult = 0.5,  -- roba al 50% del tiempo normal
 	},
 }
+
+-- Orden para iteracion en UI y spawn
+BrainrotConfig.ClassOrder = { "Runner", "Tank", "Thief" }
 
 -----------------------------------------------------------------------
 -- RAREZAS
@@ -83,11 +94,12 @@ BrainrotConfig.Rarities = {
 	},
 }
 
--- Orden de robo (mayor valor primero)
+-- Orden de robo: la boveda se roba empezando por el mas valioso
 BrainrotConfig.RarityOrder = { "Diamond", "Gold", "Normal" }
 
 -----------------------------------------------------------------------
--- HELPER: stats finales de un brainrot
+-- HELPER: componer stats finales de clase × rareza
+-- Solo combina datos, no contiene logica de juego.
 -----------------------------------------------------------------------
 function BrainrotConfig.GetStats(className: string, rarityName: string)
 	local class  = BrainrotConfig.Classes[className]
@@ -112,7 +124,7 @@ function BrainrotConfig.GetStats(className: string, rarityName: string)
 		color         = rarity.color,
 		trailEnabled  = rarity.trailEnabled,
 		glowEnabled   = rarity.glowEnabled,
-		stealTimeMult = class.stealTimeMult or 1.0,
+		stealTimeMult = class.stealTimeMult,
 	}
 end
 

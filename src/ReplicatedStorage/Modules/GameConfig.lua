@@ -1,34 +1,55 @@
 -- GameConfig
--- Constantes globales del juego
+-- Constantes globales del juego — fuente de verdad para todos los managers
 -- Ubicación: ReplicatedStorage > Modules > GameConfig (ModuleScript)
 
-local GameConfig = {
-	STARTING_CELLS = 500,
+local GameConfig = {}
 
-	BARRIER_MAX_HP = 1000,
-	BARRIER_REPAIR_COST = 80,
-	BARRIER_REPAIR_AMOUNT = 100,
-	BARRIER_REPAIR_ESCALATION = 20,
+-----------------------------------------------------------------------
+-- ECONOMIA DE PARTIDA
+-----------------------------------------------------------------------
+GameConfig.STARTING_CELLS = 500
 
-	CORE_MAX_HP = 500,
+-----------------------------------------------------------------------
+-- BARRERA
+-----------------------------------------------------------------------
+GameConfig.BARRIER_MAX_HP          = 1000
+GameConfig.BARRIER_REPAIR_COST     = 80    -- Cells base por reparacion
+GameConfig.BARRIER_REPAIR_AMOUNT   = 100   -- HP restaurado por reparacion
+GameConfig.BARRIER_REPAIR_ESCALATION = 20  -- +Cells por cada reparacion previa
 
-	VAULT_MAX_SLOTS = 6,
+-----------------------------------------------------------------------
+-- NUCLEO (solo atacable si boveda esta vacia y barrera caida)
+-----------------------------------------------------------------------
+GameConfig.CORE_MAX_HP = 500
 
-	MAX_DEFENSES = 15,
-	SELL_REFUND_RATE = 0.5,
+-----------------------------------------------------------------------
+-- BOVEDA
+-----------------------------------------------------------------------
+GameConfig.VAULT_MAX_SLOTS     = 6
+GameConfig.VAULT_INCOME_INTERVAL = 8   -- segundos entre ticks de ingreso pasivo
 
-	TOTAL_WAVES = 8,
-	BUILD_PHASE_DURATION = 18,
-	SPAWN_INTERVAL_BASE = 1.4,
+-----------------------------------------------------------------------
+-- DEFENSAS
+-----------------------------------------------------------------------
+GameConfig.MAX_DEFENSES      = 15   -- maximo de defensas en campo
+GameConfig.SELL_REFUND_RATE  = 0.5  -- 50% de reembolso al vender
 
-	INFILTRATOR_TRAVEL_TIME = 4,
-	INFILTRATOR_STEAL_TIME = 2.5,
+-----------------------------------------------------------------------
+-- OLEADAS
+-----------------------------------------------------------------------
+GameConfig.TOTAL_WAVES          = 8
+GameConfig.BUILD_PHASE_DURATION = 18   -- segundos de fase de construccion
+GameConfig.WAVE_CLEAR_DELAY     = 2.5  -- segundos entre oleada completada y siguiente build phase
 
-	VAULT_INCOME_INTERVAL = 8,
+-----------------------------------------------------------------------
+-- INFILTRACION (cuando la barrera cae)
+-----------------------------------------------------------------------
+GameConfig.INFILTRATOR_TRAVEL_TIME = 4    -- segundos para llegar a la boveda
+GameConfig.INFILTRATOR_STEAL_TIME  = 2.5  -- segundos para robar 1 brainrot
 
-	BUILD_ZONE_SNAP_RADIUS = 8,
-
-	BRAINROT_Y_OFFSET = 1.5,
-}
+-----------------------------------------------------------------------
+-- PLACEMENT
+-----------------------------------------------------------------------
+GameConfig.BUILD_ZONE_SNAP_RADIUS = 8  -- studs de distancia maxima para snap a zona
 
 return GameConfig
