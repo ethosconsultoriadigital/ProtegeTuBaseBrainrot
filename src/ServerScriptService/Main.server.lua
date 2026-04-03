@@ -1,77 +1,72 @@
 -- Main.server.lua
--- Entry point del servidor: inicializa todos los sistemas
--- Ubicación: ServerScriptService/Main (Script, no ModuleScript)
+-- Entry point del servidor: crea remotes, inicializa sistemas, game loop
+-- Ubicación: ServerScriptService > Main (Script)
 
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
 
 print("=== PROTEGE TU BASE: BRAINROT SIEGE ===")
-print("Inicializando servidor...")
+print("[Main] Inicializando servidor...")
 
--- Crear estructura de Events si no existe
-local function CreateEvents()
-	local eventsFolder = ReplicatedStorage:FindFirstChild("Events")
-	if not eventsFolder then
-		eventsFolder = Instance.new("Folder")
-		eventsFolder.Name = "Events"
-		eventsFolder.Parent = ReplicatedStorage
+-----------------------------------------------------------------------
+-- 1. Crear estructura de Modules/Events si no existe
+-----------------------------------------------------------------------
+local function EnsureFolder(parent, name)
+	local f = parent:FindFirstChild(name)
+	if not f then
+		f = Instance.new("Folder")
+		f.Name = name
+		f.Parent = parent
 	end
-
-	local remoteEvents = {
-		"WaveStarted", "WaveEnded",
-		"BrainrotSpawned", "BrainrotDied", "BrainrotCaptured",
-		"BarrierUpdate", "BreachStarted", "BreachEnded", "BrainrotStolen",
-		"CellsUpdate", "GameOver",
-		"RequestPlaceDefense", "RequestSellDefense",
-		"RequestRepairBarrier", "RequestSkipTimer",
-		"DefensePlaced",
-	}
-
-	for _, name in ipairs(remoteEvents) do
-		if not eventsFolder:FindFirstChild(name) then
-			local event = Instance.new("RemoteEvent")
-			event.Name = name
-			event.Parent = eventsFolder
-		end
-	end
-
-	-- RemoteFunctions
-	local remoteFunctions = {"GetGameState"}
-	for _, name in ipairs(remoteFunctions) do
-		if not eventsFolder:FindFirstChild(name) then
-			local func = Instance.new("RemoteFunction")
-			func.Name = name
-			func.Parent = eventsFolder
-		end
-	end
-
-	print("[Main] Events creados")
+	return f
 end
 
--- Crear Modules folder si no existe
-local function EnsureModulesFolder()
-	local modules = ReplicatedStorage:FindFirstChild("Modules")
-	if not modules then
-		modules = Instance.new("Folder")
-		modules.Name = "Modules"
-		modules.Parent = ReplicatedStorage
+EnsureFolder(ReplicatedStorage, "Modules")
+local eventsFolder = EnsureFolder(ReplicatedStorage, "Events")
+
+local remoteNames = {
+	"WaveStarted", "WaveEnded",
+	"BrainrotSpawned", "BrainrotDied", "BrainrotCaptured",
+	"BarrierUpdate", "BreachStarted", "BreachEnded", "BrainrotStolen",
+	"CellsUpdate", "GameOver",
+	"RequestPlaceDefense", "RequestSellDefense",
+	"RequestRepairBarrier", "RequestSkipTimer",
+	"DefensePlaced",
+}
+
+for _, name in ipairs(remoteNames) do
+	if not eventsFolder:FindFirstChild(name) then
+		local e = Instance.new("RemoteEvent")
+		e.Name = name
+		e.Parent = eventsFolder
 	end
 end
 
--- Inicialización
-CreateEvents()
-EnsureModulesFolder()
+if not eventsFolder:FindFirstChild("GetGameState") then
+	local f = Instance.new("RemoteFunction")
+	f.Name = "GetGameState"
+	f.Parent = eventsFolder
+end
 
--- Cargar sistemas
-local BrainrotManager = require(script.Parent.Systems.BrainrotManager)
-local DefenseManager = require(script.Parent.Systems.DefenseManager)
-local BaseManager = require(script.Parent.Systems.BaseManager)
-local CaptureManager = require(script.Parent.Systems.CaptureManager)
-local EconomyManager = require(script.Parent.Systems.EconomyManager)
-local WaveManager = require(script.Parent.Systems.WaveManager)
-local MatchManager = require(script.Parent.Systems.MatchManager)
+print("[Main] Remotes creados")
 
--- Inicializar en orden
+-----------------------------------------------------------------------
+-- 2. Cargar sistemas
+-----------------------------------------------------------------------
+local Systems = script.Parent.Systems
+
+local BrainrotManager = require(Systems.BrainrotManager)
+local DefenseManager  = require(Systems.DefenseManager)
+local BaseManager     = require(Systems.BaseManager)
+local CaptureManager  = require(Systems.CaptureManager)
+local EconomyManager  = require(Systems.EconomyManager)
+local WaveManager     = require(Systems.WaveManager)
+local MatchManager    = require(Systems.MatchManager)
+
+-----------------------------------------------------------------------
+-- 3. Inicializar en orden
+-----------------------------------------------------------------------
 BrainrotManager.Init()
 BaseManager.Init()
 EconomyManager.Init(BaseManager)
@@ -80,41 +75,42 @@ DefenseManager.Init(BrainrotManager, CaptureManager)
 WaveManager.Init(BrainrotManager)
 MatchManager.Init({
 	BrainrotManager = BrainrotManager,
-	DefenseManager = DefenseManager,
-	BaseManager = BaseManager,
-	CaptureManager = CaptureManager,
-	EconomyManager = EconomyManager,
-	WaveManager = WaveManager,
+	DefenseManager  = DefenseManager,
+	BaseManager     = BaseManager,
+	CaptureManager  = CaptureManager,
+	EconomyManager  = EconomyManager,
+	WaveManager     = WaveManager,
 })
 
-print("[Main] Todos los sistemas inicializados")
+print("[Main] Sistemas inicializados")
 
--- Game loop principal (Heartbeat = cada frame)
+-----------------------------------------------------------------------
+-- 4. Game loop
+-----------------------------------------------------------------------
 RunService.Heartbeat:Connect(function(dt)
 	MatchManager.Update(dt)
 end)
 
--- Esperar a que al menos 1 jugador entre, luego iniciar partida
--- En MVP: auto-start cuando entra el primer jugador
-local Players = game:GetService("Players")
+-----------------------------------------------------------------------
+-- 5. Auto-start cuando entra un jugador
+-----------------------------------------------------------------------
+local started = false
 
-local function StartWhenReady()
-	if #Players:GetPlayers() > 0 then
-		task.wait(3) -- Dar tiempo a que el cliente cargue
-		MatchManager.StartMatch()
-	end
+local function TryStart()
+	if started then return end
+	if #Players:GetPlayers() == 0 then return end
+	started = true
+	task.wait(3) -- dar tiempo al cliente para cargar
+	MatchManager.StartMatch()
 end
 
-Players.PlayerAdded:Connect(function(player)
-	if MatchManager.GetState() == "WAITING" then
-		task.wait(3)
-		MatchManager.StartMatch()
-	end
+Players.PlayerAdded:Connect(function()
+	if not started then task.spawn(TryStart) end
 end)
 
--- Si ya hay jugadores (Play Solo en Studio)
+-- Para Play Solo (jugador ya existe al iniciar)
 if #Players:GetPlayers() > 0 then
-	task.spawn(StartWhenReady)
+	task.spawn(TryStart)
 end
 
 print("[Main] Servidor listo, esperando jugadores...")

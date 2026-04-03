@@ -1,111 +1,107 @@
--- BrainrotManager.lua
--- Gestiona spawning, movimiento, daño y muerte de brainrots
--- Ubicación: ServerScriptService/Systems/BrainrotManager
+-- BrainrotManager
+-- Spawning, movimiento, daño, muerte y visuals de brainrots
+-- Ubicación: ServerScriptService > Systems > BrainrotManager (ModuleScript)
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
 local BrainrotConfig = require(ReplicatedStorage.Modules.BrainrotConfig)
+local GameConfig = require(ReplicatedStorage.Modules.GameConfig)
 local PathFollower = require(script.Parent.Parent.AI.PathFollower)
 
 local BrainrotManager = {}
 
--- Pool y tracking
-local activeBrainrots: {[string]: any} = {}   -- id -> brainrot data
-local brainrotModels: {[string]: BasePart} = {} -- id -> part visual
+local active: {[string]: any} = {}
+local models: {[string]: BasePart} = {}
 local nextId = 1
-local activeFolder: Folder = nil
-
--- Callbacks que otros sistemas registran
-local onBrainrotDied = nil       -- function(id, brainrotData, killedByDefense)
-local onBrainrotReachedEnd = nil -- function(id, brainrotData)
-
--- Eventos
+local folder: Folder = nil
 local Events = nil
 
-function BrainrotManager.Init()
-	activeFolder = workspace:FindFirstChild("ActiveBrainrots")
-	if not activeFolder then
-		activeFolder = Instance.new("Folder")
-		activeFolder.Name = "ActiveBrainrots"
-		activeFolder.Parent = workspace
-	end
+-- Callbacks externos
+local onDied = nil
+local onReachedEnd = nil
 
+function BrainrotManager.Init()
+	folder = workspace:FindFirstChild("ActiveBrainrots")
+	if not folder then
+		folder = Instance.new("Folder")
+		folder.Name = "ActiveBrainrots"
+		folder.Parent = workspace
+	end
 	Events = ReplicatedStorage:FindFirstChild("Events")
 	PathFollower.LoadWaypoints()
 end
 
--- Registrar callbacks
-function BrainrotManager.OnBrainrotDied(callback)
-	onBrainrotDied = callback
-end
+function BrainrotManager.OnBrainrotDied(cb) onDied = cb end
+function BrainrotManager.OnBrainrotReachedEnd(cb) onReachedEnd = cb end
 
-function BrainrotManager.OnBrainrotReachedEnd(callback)
-	onBrainrotReachedEnd = callback
-end
-
--- Crear un brainrot y añadirlo al campo
+-----------------------------------------------------------------------
+-- SPAWN
+-----------------------------------------------------------------------
 function BrainrotManager.Spawn(className: string, rarityName: string, hpOverride: number?, isBoss: boolean?): string?
 	local stats = BrainrotConfig.GetStats(className, rarityName)
 	if not stats then return nil end
 
 	local id = "br_" .. nextId
-	nextId = nextId + 1
+	nextId += 1
 
 	local spawnPos = PathFollower.GetSpawnPosition()
-	local finalHP = stats.maxHP * (hpOverride or 1.0)
+	local hp = stats.maxHP * (hpOverride or 1.0)
 
-	-- Datos internos del brainrot (server-side)
-	local brainrot = {
-		id = id,
-		className = className,
-		rarityName = rarityName,
-		maxHP = finalHP,
-		hp = finalHP,
-		speed = stats.speed,
+	local br = {
+		id            = id,
+		className     = className,
+		rarityName    = rarityName,
+		maxHP         = hp,
+		hp            = hp,
+		speed         = stats.speed,
 		barrierDamage = stats.barrierDamage,
-		killReward = stats.killReward,
-		captureReward = stats.captureReward,
-		captureRate = stats.captureRate,
-		vaultValue = stats.vaultValue,
-		vaultIncome = stats.vaultIncome,
-		position = spawnPos,
-		pathIndex = 1,
-		slowAmount = 0,        -- 0 a 1, porcentaje de slow
-		slowTimer = 0,         -- Segundos restantes de slow
-		alive = true,
-		isBoss = isBoss or false,
+		killReward    = stats.killReward,
+		captureBonus  = stats.captureBonus,
+		captureRate   = stats.captureRate,
+		vaultValue    = stats.vaultValue,
+		vaultIncome   = stats.vaultIncome,
+		stealTimeMult = stats.stealTimeMult,
+		position      = spawnPos,
+		pathIndex     = 1,
+		slowAmount    = 0,
+		slowTimer     = 0,
+		alive         = true,
+		isBoss        = isBoss or false,
 	}
+	active[id] = br
 
-	activeBrainrots[id] = brainrot
+	-- Crear visual
+	local size = stats.size
+	if isBoss then size = size * 1.8 end
 
-	-- Crear visual (part simple con color de rareza)
 	local part = Instance.new("Part")
 	part.Name = id
-	part.Size = stats.size
+	part.Size = size
 	part.Shape = stats.shape
 	part.Anchored = true
 	part.CanCollide = false
 	part.Color = stats.color
-	part.Material = Enum.Material.SmoothPlastic
+	part.Material = isBoss and Enum.Material.Neon or Enum.Material.SmoothPlastic
 	part.Position = spawnPos
-	part.Parent = activeFolder
+	part.Parent = folder
 
-	-- Billboard para HP (solo para Raros+)
+	-- Barra HP (Gold+ y bosses)
 	if rarityName ~= "Normal" or isBoss then
-		local billboard = Instance.new("BillboardGui")
-		billboard.Name = "HPBar"
-		billboard.Size = UDim2.new(3, 0, 0.4, 0)
-		billboard.StudsOffset = Vector3.new(0, 2.5, 0)
-		billboard.AlwaysOnTop = true
-		billboard.Parent = part
+		local bb = Instance.new("BillboardGui")
+		bb.Name = "HPBar"
+		bb.Size = UDim2.new(3, 0, 0.4, 0)
+		bb.StudsOffset = Vector3.new(0, size.Y / 2 + 1.2, 0)
+		bb.AlwaysOnTop = true
+		bb.Parent = part
 
 		local bg = Instance.new("Frame")
-		bg.Name = "Background"
+		bg.Name = "BG"
 		bg.Size = UDim2.new(1, 0, 1, 0)
-		bg.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+		bg.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 		bg.BorderSizePixel = 0
-		bg.Parent = billboard
+		bg.Parent = bb
+		Instance.new("UICorner", bg).CornerRadius = UDim.new(0.3, 0)
 
 		local fill = Instance.new("Frame")
 		fill.Name = "Fill"
@@ -113,28 +109,22 @@ function BrainrotManager.Spawn(className: string, rarityName: string, hpOverride
 		fill.BackgroundColor3 = stats.color
 		fill.BorderSizePixel = 0
 		fill.Parent = bg
-
-		local corner1 = Instance.new("UICorner")
-		corner1.CornerRadius = UDim.new(0.3, 0)
-		corner1.Parent = bg
-		local corner2 = Instance.new("UICorner")
-		corner2.CornerRadius = UDim.new(0.3, 0)
-		corner2.Parent = fill
+		Instance.new("UICorner", fill).CornerRadius = UDim.new(0.3, 0)
 	end
 
-	-- Trail para Raros+
+	-- Trail para Gold/Diamond
 	if stats.trailEnabled then
-		local attachment0 = Instance.new("Attachment")
-		attachment0.Position = Vector3.new(0, 0, -stats.size.Z / 2)
-		attachment0.Parent = part
-		local attachment1 = Instance.new("Attachment")
-		attachment1.Position = Vector3.new(0, 0, stats.size.Z / 2)
-		attachment1.Parent = part
+		local a0 = Instance.new("Attachment")
+		a0.Position = Vector3.new(0, 0, -size.Z / 2)
+		a0.Parent = part
+		local a1 = Instance.new("Attachment")
+		a1.Position = Vector3.new(0, 0, size.Z / 2)
+		a1.Parent = part
 		local trail = Instance.new("Trail")
-		trail.Attachment0 = attachment0
-		trail.Attachment1 = attachment1
+		trail.Attachment0 = a0
+		trail.Attachment1 = a1
 		trail.Color = ColorSequence.new(stats.color)
-		trail.Lifetime = 0.4
+		trail.Lifetime = 0.5
 		trail.MinLength = 0.1
 		trail.Transparency = NumberSequence.new({
 			NumberSequenceKeypoint.new(0, 0.3),
@@ -143,170 +133,133 @@ function BrainrotManager.Spawn(className: string, rarityName: string, hpOverride
 		trail.Parent = part
 	end
 
-	-- Indicador de boss
-	if isBoss then
-		part.Material = Enum.Material.Neon
-		part.Size = stats.size * 1.8
-
+	-- Glow
+	if stats.glowEnabled or isBoss then
 		local light = Instance.new("PointLight")
 		light.Color = stats.color
-		light.Brightness = 2
-		light.Range = 12
+		light.Brightness = isBoss and 3 or 1.5
+		light.Range = isBoss and 16 or 8
 		light.Parent = part
 	end
 
-	brainrotModels[id] = part
+	models[id] = part
 
-	-- Notificar clientes
 	if Events then
 		Events.BrainrotSpawned:FireAllClients({
-			id = id,
-			class = className,
-			rarity = rarityName,
-			isBoss = brainrot.isBoss,
+			id = id, class = className, rarity = rarityName, isBoss = br.isBoss,
 		})
 	end
-
 	return id
 end
 
--- Aplicar daño a un brainrot
+-----------------------------------------------------------------------
+-- DAMAGE
+-----------------------------------------------------------------------
 function BrainrotManager.Damage(id: string, amount: number): boolean
-	local brainrot = activeBrainrots[id]
-	if not brainrot or not brainrot.alive then return false end
+	local br = active[id]
+	if not br or not br.alive then return false end
 
-	brainrot.hp = brainrot.hp - amount
+	br.hp = br.hp - amount
 
-	-- Actualizar barra de HP visual
-	local model = brainrotModels[id]
+	-- Actualizar HP bar
+	local model = models[id]
 	if model then
-		local billboard = model:FindFirstChild("HPBar")
-		if billboard then
-			local bg = billboard:FindFirstChild("Background")
-			if bg then
-				local fill = bg:FindFirstChild("Fill")
-				if fill then
-					local ratio = math.clamp(brainrot.hp / brainrot.maxHP, 0, 1)
-					fill.Size = UDim2.new(ratio, 0, 1, 0)
-
-					-- Color: verde > amarillo > rojo según HP
-					if ratio > 0.5 then
-						fill.BackgroundColor3 = Color3.fromRGB(76, 175, 80)
-					elseif ratio > 0.25 then
-						fill.BackgroundColor3 = Color3.fromRGB(255, 193, 7)
-					else
-						fill.BackgroundColor3 = Color3.fromRGB(244, 67, 54)
-					end
+		local bb = model:FindFirstChild("HPBar")
+		if bb then
+			local bg = bb:FindFirstChild("BG")
+			local fill = bg and bg:FindFirstChild("Fill")
+			if fill then
+				local ratio = math.clamp(br.hp / br.maxHP, 0, 1)
+				fill.Size = UDim2.new(ratio, 0, 1, 0)
+				if ratio > 0.5 then
+					fill.BackgroundColor3 = Color3.fromRGB(76, 175, 80)
+				elseif ratio > 0.25 then
+					fill.BackgroundColor3 = Color3.fromRGB(255, 193, 7)
+				else
+					fill.BackgroundColor3 = Color3.fromRGB(244, 67, 54)
 				end
 			end
 		end
 	end
 
-	if brainrot.hp <= 0 then
-		brainrot.alive = false
+	if br.hp <= 0 then
+		br.alive = false
 		BrainrotManager._Remove(id)
-		if onBrainrotDied then
-			onBrainrotDied(id, brainrot, true)
-		end
-		return true -- Murió
+		if onDied then onDied(id, br, true) end
+		return true
 	end
-
 	return false
 end
 
--- Aplicar slow a un brainrot
-function BrainrotManager.ApplySlow(id: string, slowFactor: number, duration: number)
-	local brainrot = activeBrainrots[id]
-	if not brainrot or not brainrot.alive then return end
-
-	-- Tomar el slow más fuerte
-	if slowFactor > brainrot.slowAmount then
-		brainrot.slowAmount = slowFactor
-	end
-	-- Extender duración si es mayor
-	if duration > brainrot.slowTimer then
-		brainrot.slowTimer = duration
-	end
+-----------------------------------------------------------------------
+-- SLOW
+-----------------------------------------------------------------------
+function BrainrotManager.ApplySlow(id: string, factor: number, duration: number)
+	local br = active[id]
+	if not br or not br.alive then return end
+	if factor > br.slowAmount then br.slowAmount = factor end
+	if duration > br.slowTimer then br.slowTimer = duration end
 end
 
--- Obtener datos de un brainrot
-function BrainrotManager.GetBrainrot(id: string): any?
-	return activeBrainrots[id]
-end
+-----------------------------------------------------------------------
+-- GETTERS
+-----------------------------------------------------------------------
+function BrainrotManager.Get(id: string) return active[id] end
+function BrainrotManager.GetAllActive() return active end
 
--- Obtener todos los brainrots activos
-function BrainrotManager.GetAllActive(): {[string]: any}
-	return activeBrainrots
-end
-
--- Contar brainrots activos
 function BrainrotManager.GetActiveCount(): number
-	local count = 0
-	for _, br in pairs(activeBrainrots) do
-		if br.alive then count = count + 1 end
+	local c = 0
+	for _, br in pairs(active) do
+		if br.alive then c += 1 end
 	end
-	return count
+	return c
 end
 
--- Eliminar un brainrot del campo (captura o muerte)
-function BrainrotManager.Remove(id: string)
-	BrainrotManager._Remove(id)
-end
+-----------------------------------------------------------------------
+-- REMOVE
+-----------------------------------------------------------------------
+function BrainrotManager.Remove(id: string) BrainrotManager._Remove(id) end
 
 function BrainrotManager._Remove(id: string)
-	activeBrainrots[id] = nil
-
-	local model = brainrotModels[id]
-	if model then
-		model:Destroy()
-		brainrotModels[id] = nil
-	end
-
-	-- Notificar muerte a clientes
-	if Events then
-		Events.BrainrotDied:FireAllClients({id = id})
-	end
+	active[id] = nil
+	local m = models[id]
+	if m then m:Destroy(); models[id] = nil end
+	if Events then Events.BrainrotDied:FireAllClients({ id = id }) end
 end
 
--- Limpiar todos los brainrots (fin de partida)
 function BrainrotManager.ClearAll()
-	for id, _ in pairs(activeBrainrots) do
-		BrainrotManager._Remove(id)
-	end
-	activeBrainrots = {}
-	brainrotModels = {}
+	for id in pairs(active) do BrainrotManager._Remove(id) end
+	active = {}
+	models = {}
 end
 
--- Update loop: mover todos los brainrots (llamado desde Heartbeat)
+-----------------------------------------------------------------------
+-- UPDATE (llamar desde Heartbeat)
+-----------------------------------------------------------------------
 function BrainrotManager.Update(dt: number)
-	for id, brainrot in pairs(activeBrainrots) do
-		if brainrot.alive then
-			-- Actualizar slow timer
-			if brainrot.slowTimer > 0 then
-				brainrot.slowTimer = brainrot.slowTimer - dt
-				if brainrot.slowTimer <= 0 then
-					brainrot.slowAmount = 0
-					brainrot.slowTimer = 0
-				end
-			end
+	for id, br in pairs(active) do
+		if not br.alive then continue end
 
-			-- Mover por path
-			local reachedEnd = PathFollower.Update(brainrot, dt)
-
-			-- Actualizar posición visual
-			local model = brainrotModels[id]
-			if model then
-				model.Position = brainrot.position
+		-- Slow timer
+		if br.slowTimer > 0 then
+			br.slowTimer -= dt
+			if br.slowTimer <= 0 then
+				br.slowAmount = 0
+				br.slowTimer = 0
 			end
+		end
 
-			-- Si llegó al final
-			if reachedEnd then
-				brainrot.alive = false
-				if onBrainrotReachedEnd then
-					onBrainrotReachedEnd(id, brainrot)
-				end
-				BrainrotManager._Remove(id)
-			end
+		-- Path
+		local reachedEnd = PathFollower.Update(br, dt)
+
+		-- Sync visual
+		local m = models[id]
+		if m then m.Position = br.position end
+
+		if reachedEnd then
+			br.alive = false
+			if onReachedEnd then onReachedEnd(id, br) end
+			BrainrotManager._Remove(id)
 		end
 	end
 end

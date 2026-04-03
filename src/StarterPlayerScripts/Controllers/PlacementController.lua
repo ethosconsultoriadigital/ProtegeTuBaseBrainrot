@@ -1,14 +1,13 @@
--- PlacementController.lua
--- Controla la colocación de defensas desde el cliente (preview, snap, request)
--- Ubicación: StarterPlayerScripts/Controllers/PlacementController
+-- PlacementController
+-- Preview fantasma, snap a build zones, request al server
+-- Ubicación: StarterPlayerScripts > Controllers > PlacementController (ModuleScript)
 
 local Players = game:GetService("Players")
-local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local DefenseConfig = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("DefenseConfig"))
-local GameConfig = require(ReplicatedStorage.Modules.GameConfig)
+local GameConfig = require(ReplicatedStorage.Modules:WaitForChild("GameConfig"))
 
 local PlacementController = {}
 
@@ -16,161 +15,128 @@ local player = Players.LocalPlayer
 local mouse = player:GetMouse()
 local camera = workspace.CurrentCamera
 
--- Estado
 local isPlacing = false
-local selectedDefenseType = nil
-local ghostPart: BasePart? = nil
-local rangeIndicator: BasePart? = nil
+local selectedType: string? = nil
+local ghost: BasePart? = nil
+local rangeRing: BasePart? = nil
 local currentZone: BasePart? = nil
 local Events = nil
-
--- Conexiones
-local renderConn = nil
+local conn = nil
 
 function PlacementController.Init()
 	Events = ReplicatedStorage:WaitForChild("Events")
 end
 
--- Activar modo de colocación
 function PlacementController.StartPlacing(defenseType: string)
-	if isPlacing then
-		PlacementController.CancelPlacing()
-	end
+	if isPlacing then PlacementController.CancelPlacing() end
 
-	local defConfig = DefenseConfig.Defenses[defenseType]
-	if not defConfig then return end
+	local cfg = DefenseConfig.Defenses[defenseType]
+	if not cfg then return end
 
 	isPlacing = true
-	selectedDefenseType = defenseType
+	selectedType = defenseType
 
-	-- Crear ghost (preview)
-	ghostPart = Instance.new("Part")
-	ghostPart.Name = "PlacementGhost"
-	ghostPart.Size = defConfig.size
-	ghostPart.Anchored = true
-	ghostPart.CanCollide = false
-	ghostPart.Color = defConfig.color
-	ghostPart.Material = Enum.Material.ForceField
-	ghostPart.Transparency = 0.5
-	ghostPart.Parent = workspace
+	-- Ghost
+	ghost = Instance.new("Part")
+	ghost.Name = "Ghost"
+	ghost.Size = cfg.size
+	ghost.Anchored = true
+	ghost.CanCollide = false
+	ghost.Color = cfg.color
+	ghost.Material = Enum.Material.ForceField
+	ghost.Transparency = 0.45
+	ghost.Parent = workspace
 
-	-- Range indicator
+	-- Range ring
 	local stats = DefenseConfig.GetStats(defenseType, 1)
-	if stats and stats.range then
-		rangeIndicator = Instance.new("Part")
-		rangeIndicator.Name = "RangePreview"
-		rangeIndicator.Shape = Enum.PartType.Cylinder
-		rangeIndicator.Size = Vector3.new(0.1, stats.range * 2, stats.range * 2)
-		rangeIndicator.Anchored = true
-		rangeIndicator.CanCollide = false
-		rangeIndicator.Color = defConfig.color
-		rangeIndicator.Transparency = 0.9
-		rangeIndicator.Material = Enum.Material.Neon
-		rangeIndicator.Parent = workspace
+	if stats then
+		local r = stats.range or 10
+		rangeRing = Instance.new("Part")
+		rangeRing.Name = "RangeRing"
+		rangeRing.Shape = Enum.PartType.Cylinder
+		rangeRing.Size = Vector3.new(0.08, r * 2, r * 2)
+		rangeRing.Anchored = true
+		rangeRing.CanCollide = false
+		rangeRing.Color = cfg.color
+		rangeRing.Transparency = 0.9
+		rangeRing.Material = Enum.Material.Neon
+		rangeRing.Parent = workspace
 	end
 
-	-- Update loop para seguir el mouse
-	renderConn = RunService.RenderStepped:Connect(function()
+	conn = RunService.RenderStepped:Connect(function()
 		PlacementController._UpdateGhost()
 	end)
 end
 
--- Cancelar colocación
 function PlacementController.CancelPlacing()
 	isPlacing = false
-	selectedDefenseType = nil
+	selectedType = nil
 	currentZone = nil
-
-	if ghostPart then
-		ghostPart:Destroy()
-		ghostPart = nil
-	end
-	if rangeIndicator then
-		rangeIndicator:Destroy()
-		rangeIndicator = nil
-	end
-	if renderConn then
-		renderConn:Disconnect()
-		renderConn = nil
-	end
+	if ghost then ghost:Destroy(); ghost = nil end
+	if rangeRing then rangeRing:Destroy(); rangeRing = nil end
+	if conn then conn:Disconnect(); conn = nil end
 end
 
--- Confirmar colocación
 function PlacementController.ConfirmPlacement()
 	if not isPlacing or not currentZone then return end
-
-	-- Enviar request al servidor
 	Events.RequestPlaceDefense:FireServer({
-		defenseType = selectedDefenseType,
+		defenseType = selectedType,
 		position = currentZone.Position,
 	})
-
 	PlacementController.CancelPlacing()
 end
 
--- Update de preview
 function PlacementController._UpdateGhost()
-	if not ghostPart then return end
+	if not ghost then return end
 
-	-- Raycast desde mouse
 	local ray = camera:ScreenPointToRay(mouse.X, mouse.Y)
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Include
-	params.FilterDescendantsInstances = {workspace.Map}
+	params.FilterDescendantsInstances = { workspace:FindFirstChild("Map") }
 
 	local result = workspace:Raycast(ray.Origin, ray.Direction * 500, params)
 	if not result then
-		ghostPart.Transparency = 1
-		if rangeIndicator then rangeIndicator.Transparency = 1 end
+		ghost.Transparency = 1
+		if rangeRing then rangeRing.Transparency = 1 end
+		currentZone = nil
 		return
 	end
 
 	local hitPos = result.Position
-
-	-- Buscar zona de construcción más cercana
-	local buildZones = workspace.Map:FindFirstChild("BuildZones")
+	local buildZones = workspace.Map and workspace.Map:FindFirstChild("BuildZones")
 	if not buildZones then return end
 
-	local closestZone = nil
-	local closestDist = GameConfig.BUILD_ZONE_RADIUS * 2
+	local best: BasePart? = nil
+	local bestDist = GameConfig.BUILD_ZONE_SNAP_RADIUS * 2
 
-	for _, zone in ipairs(buildZones:GetChildren()) do
-		if zone:IsA("BasePart") then
-			local dist = (zone.Position - hitPos).Magnitude
-			if dist < closestDist then
-				closestDist = dist
-				closestZone = zone
-			end
+	for _, z in ipairs(buildZones:GetChildren()) do
+		if z:IsA("BasePart") then
+			local d = (z.Position - hitPos).Magnitude
+			if d < bestDist then bestDist = d; best = z end
 		end
 	end
 
-	if closestZone and closestDist <= GameConfig.BUILD_ZONE_RADIUS * 2 then
-		currentZone = closestZone
-		local defConfig = DefenseConfig.Defenses[selectedDefenseType]
-		local yOffset = defConfig and defConfig.size.Y / 2 + 0.1 or 1.5
+	if best then
+		currentZone = best
+		local cfg = DefenseConfig.Defenses[selectedType]
+		local yOff = cfg and cfg.size.Y / 2 + 0.1 or 1.5
+		ghost.Position = best.Position + Vector3.new(0, yOff, 0)
+		ghost.Transparency = 0.4
+		ghost.Color = cfg and cfg.color or Color3.new(1,1,1)
 
-		ghostPart.Position = closestZone.Position + Vector3.new(0, yOffset, 0)
-		ghostPart.Transparency = 0.4
-		ghostPart.Color = DefenseConfig.Defenses[selectedDefenseType].color
-
-		if rangeIndicator then
-			rangeIndicator.CFrame = CFrame.new(closestZone.Position.X, 0.15, closestZone.Position.Z)
-				* CFrame.Angles(0, 0, math.rad(90))
-			rangeIndicator.Transparency = 0.88
+		if rangeRing then
+			rangeRing.CFrame = CFrame.new(best.Position.X, 0.12, best.Position.Z) * CFrame.Angles(0, 0, math.rad(90))
+			rangeRing.Transparency = 0.88
 		end
 	else
 		currentZone = nil
-		ghostPart.Transparency = 0.8
-		ghostPart.Color = Color3.fromRGB(255, 0, 0) -- Rojo = inválido
-
-		if rangeIndicator then
-			rangeIndicator.Transparency = 1
-		end
+		ghost.Transparency = 0.8
+		ghost.Color = Color3.fromRGB(255, 0, 0)
+		if rangeRing then rangeRing.Transparency = 1 end
 	end
 end
 
--- Getters
 function PlacementController.IsPlacing(): boolean return isPlacing end
-function PlacementController.GetSelectedType(): string? return selectedDefenseType end
+function PlacementController.GetSelectedType(): string? return selectedType end
 
 return PlacementController

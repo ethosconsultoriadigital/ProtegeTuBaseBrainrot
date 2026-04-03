@@ -1,93 +1,72 @@
--- CameraController.lua
--- Cámara top-down/isométrica con zoom y pan
--- Ubicación: StarterPlayerScripts/Controllers/CameraController
+-- CameraController
+-- Camara top-down con WASD pan y scroll zoom
+-- Ubicación: StarterPlayerScripts > Controllers > CameraController (ModuleScript)
 
-local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 
 local CameraController = {}
 
-local player = Players.LocalPlayer
 local camera = workspace.CurrentCamera
 
--- Configuración
-local CAMERA_HEIGHT = 60
-local CAMERA_ANGLE = 55       -- Grados desde la horizontal
-local CAMERA_DISTANCE = 50
-local PAN_SPEED = 50
-local ZOOM_SPEED = 5
+local PAN_SPEED = 55
+local ZOOM_SPEED = 6
 local MIN_ZOOM = 25
-local MAX_ZOOM = 90
+local MAX_ZOOM = 100
+local ANGLE_DEG = 55
 
--- Estado
-local cameraTarget = Vector3.new(0, 0, 20) -- Centro del mapa
-local currentZoom = CAMERA_DISTANCE
+local target = Vector3.new(0, 0, 20)
+local zoom = 55
 local enabled = false
-local renderConn = nil
+local conn = nil
 
-function CameraController.Init()
-	-- Nada por ahora
-end
+function CameraController.Init() end
 
 function CameraController.Enable()
 	if enabled then return end
 	enabled = true
-
 	camera.CameraType = Enum.CameraType.Scriptable
 
-	-- Zoom con scroll
+	-- Zoom
 	UserInputService.InputChanged:Connect(function(input)
 		if not enabled then return end
 		if input.UserInputType == Enum.UserInputType.MouseWheel then
-			currentZoom = math.clamp(currentZoom - input.Position.Z * ZOOM_SPEED, MIN_ZOOM, MAX_ZOOM)
+			zoom = math.clamp(zoom - input.Position.Z * ZOOM_SPEED, MIN_ZOOM, MAX_ZOOM)
 		end
 	end)
 
-	-- Update loop
-	renderConn = RunService.RenderStepped:Connect(function(dt)
+	conn = RunService.RenderStepped:Connect(function(dt)
 		if not enabled then return end
 
-		-- Pan con WASD o flechas
-		local moveDir = Vector3.new(0, 0, 0)
-		if UserInputService:IsKeyDown(Enum.KeyCode.W) or UserInputService:IsKeyDown(Enum.KeyCode.Up) then
-			moveDir = moveDir + Vector3.new(0, 0, -1)
+		local dir = Vector3.zero
+		local keys = UserInputService.IsKeyDown
+		if keys(UserInputService, Enum.KeyCode.W) or keys(UserInputService, Enum.KeyCode.Up) then
+			dir += Vector3.new(0, 0, -1)
 		end
-		if UserInputService:IsKeyDown(Enum.KeyCode.S) or UserInputService:IsKeyDown(Enum.KeyCode.Down) then
-			moveDir = moveDir + Vector3.new(0, 0, 1)
+		if keys(UserInputService, Enum.KeyCode.S) or keys(UserInputService, Enum.KeyCode.Down) then
+			dir += Vector3.new(0, 0, 1)
 		end
-		if UserInputService:IsKeyDown(Enum.KeyCode.A) or UserInputService:IsKeyDown(Enum.KeyCode.Left) then
-			moveDir = moveDir + Vector3.new(-1, 0, 0)
+		if keys(UserInputService, Enum.KeyCode.A) or keys(UserInputService, Enum.KeyCode.Left) then
+			dir += Vector3.new(-1, 0, 0)
 		end
-		if UserInputService:IsKeyDown(Enum.KeyCode.D) or UserInputService:IsKeyDown(Enum.KeyCode.Right) then
-			moveDir = moveDir + Vector3.new(1, 0, 0)
+		if keys(UserInputService, Enum.KeyCode.D) or keys(UserInputService, Enum.KeyCode.Right) then
+			dir += Vector3.new(1, 0, 0)
+		end
+		if dir.Magnitude > 0 then
+			target += dir.Unit * PAN_SPEED * dt
 		end
 
-		if moveDir.Magnitude > 0 then
-			cameraTarget = cameraTarget + moveDir.Unit * PAN_SPEED * dt
-		end
-
-		-- Calcular posición de cámara
-		local angleRad = math.rad(CAMERA_ANGLE)
-		local offsetY = math.sin(angleRad) * currentZoom
-		local offsetZ = math.cos(angleRad) * currentZoom
-
-		local cameraPos = cameraTarget + Vector3.new(0, offsetY, offsetZ)
-		camera.CFrame = CFrame.lookAt(cameraPos, cameraTarget)
+		local rad = math.rad(ANGLE_DEG)
+		local oY = math.sin(rad) * zoom
+		local oZ = math.cos(rad) * zoom
+		camera.CFrame = CFrame.lookAt(target + Vector3.new(0, oY, oZ), target)
 	end)
 end
 
 function CameraController.Disable()
 	enabled = false
 	camera.CameraType = Enum.CameraType.Custom
-	if renderConn then
-		renderConn:Disconnect()
-		renderConn = nil
-	end
-end
-
-function CameraController.SetTarget(pos: Vector3)
-	cameraTarget = pos
+	if conn then conn:Disconnect(); conn = nil end
 end
 
 return CameraController

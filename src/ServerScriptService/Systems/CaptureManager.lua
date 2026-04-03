@@ -1,68 +1,59 @@
--- CaptureManager.lua
--- Lógica de captura de brainrots
--- Ubicación: ServerScriptService/Systems/CaptureManager
+-- CaptureManager
+-- Roll de captura, transfer a boveda, recompensas
+-- Ubicación: ServerScriptService > Systems > CaptureManager (ModuleScript)
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+local GameConfig = require(ReplicatedStorage.Modules.GameConfig)
 
 local CaptureManager = {}
 
 local BrainrotManager = nil
-local BaseManager = nil
-local EconomyManager = nil
-local Events = nil
+local BaseManager     = nil
+local EconomyManager  = nil
+local Events          = nil
 
-function CaptureManager.Init(brainrotMgr, baseMgr, economyMgr)
-	BrainrotManager = brainrotMgr
-	BaseManager = baseMgr
-	EconomyManager = economyMgr
+function CaptureManager.Init(brMgr, baseMgr, ecoMgr)
+	BrainrotManager = brMgr
+	BaseManager     = baseMgr
+	EconomyManager  = ecoMgr
 	Events = ReplicatedStorage:FindFirstChild("Events")
 end
 
--- Intentar capturar un brainrot (llamado por DefenseManager desde módulo de captura)
-function CaptureManager.TryCapture(brainrotId: string, captureMultiplier: number): boolean
-	local br = BrainrotManager.GetBrainrot(brainrotId)
+function CaptureManager.TryCapture(brainrotId: string, captureMult: number): boolean
+	local br = BrainrotManager.Get(brainrotId)
 	if not br or not br.alive then return false end
 
-	-- Roll de probabilidad
-	local finalRate = br.captureRate * captureMultiplier
-	local roll = math.random()
+	-- Roll
+	local prob = br.captureRate * captureMult
+	if math.random() > prob then return false end
 
-	if roll > finalRate then
-		-- Falló la captura
-		return false
-	end
+	-- Boveda llena?
+	if not BaseManager.AddToVault(br) then return false end
 
-	-- Intentar añadir a la bóveda
-	local added = BaseManager.AddToVault(br)
-	if not added then
-		-- Bóveda llena
-		return false
-	end
-
-	-- Captura exitosa: remover brainrot del campo
+	-- Exito
 	BrainrotManager.Remove(brainrotId)
 
-	-- Dar recompensa de captura
+	-- Recompensa
 	if EconomyManager then
-		-- Dar cells a todos los jugadores (en MVP solo hay 1)
-		for _, player in ipairs(game:GetService("Players"):GetPlayers()) do
-			EconomyManager.AddCells(player, br.captureReward)
+		for _, player in ipairs(Players:GetPlayers()) do
+			EconomyManager.AddCells(player, br.captureBonus)
 		end
 	end
 
-	-- Notificar clientes
+	-- Notificar
 	if Events then
 		Events.BrainrotCaptured:FireAllClients({
-			id = brainrotId,
+			id        = brainrotId,
 			className = br.className,
-			rarity = br.rarityName,
+			rarity    = br.rarityName,
 			vaultValue = br.vaultValue,
 			vaultCount = BaseManager.GetVaultCount(),
-			vaultMax = require(ReplicatedStorage.Modules.GameConfig).VAULT_MAX_SLOTS,
+			vaultMax   = GameConfig.VAULT_MAX_SLOTS,
 		})
 	end
 
-	print("[CaptureManager] ¡Captura exitosa! " .. br.className .. " " .. br.rarityName)
+	print("[Capture] " .. br.className .. " " .. br.rarityName .. " capturado!")
 	return true
 end
 

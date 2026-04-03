@@ -1,107 +1,118 @@
--- BrainrotConfig.lua
--- Stats de clases y rarezas de Brainrots
--- Ubicación: ReplicatedStorage/Modules/BrainrotConfig
+-- BrainrotConfig
+-- Clases: Runner, Tank, Thief | Rarezas: Normal, Gold, Diamond
+-- Ubicación: ReplicatedStorage > Modules > BrainrotConfig (ModuleScript)
 
 local BrainrotConfig = {}
 
--- Clases base (stats a rareza Normal)
+-----------------------------------------------------------------------
+-- CLASES (stats base a rareza Normal)
+-----------------------------------------------------------------------
 BrainrotConfig.Classes = {
-	Swarmer = {
-		baseHP = 50,
-		baseSpeed = 16,
-		baseBarrierDamage = 8,
-		size = Vector3.new(1.5, 1.5, 1.5),
-		shape = Enum.PartType.Ball,
-		description = "Rápido y frágil, viaja en grupo",
+	Runner = {
+		baseHP        = 45,
+		baseSpeed     = 18,
+		baseDamage    = 8,   -- daño a barrera por impacto
+		size          = Vector3.new(1.6, 1.6, 1.6),
+		shape         = Enum.PartType.Ball,
+		description   = "Rapido y fragil, llega antes que nadie",
 	},
 	Tank = {
-		baseHP = 180,
-		baseSpeed = 7,
-		baseBarrierDamage = 25,
-		size = Vector3.new(3, 3, 3),
-		shape = Enum.PartType.Block,
-		description = "Lento pero muy resistente",
+		baseHP        = 200,
+		baseSpeed     = 7,
+		baseDamage    = 30,
+		size          = Vector3.new(3.2, 3.2, 3.2),
+		shape         = Enum.PartType.Block,
+		description   = "Lento, absorbe mucho daño",
 	},
-	Speedster = {
-		baseHP = 35,
-		baseSpeed = 22,
-		baseBarrierDamage = 5,
-		size = Vector3.new(1.2, 1.2, 2.4),
-		shape = Enum.PartType.Block,
-		description = "Extremadamente rápido, bajo HP",
+	Thief = {
+		baseHP        = 70,
+		baseSpeed     = 14,
+		baseDamage    = 12,
+		size          = Vector3.new(1.8, 1.8, 1.8),
+		shape         = Enum.PartType.Block,
+		description   = "Si infiltra la base, roba capturas extra rapido",
+		stealTimeMult = 0.5, -- roba al 50% del tiempo normal
 	},
 }
 
--- Rarezas con multiplicadores
+-----------------------------------------------------------------------
+-- RAREZAS
+-----------------------------------------------------------------------
 BrainrotConfig.Rarities = {
 	Normal = {
-		order = 1,
-		hpMult = 1.0,
-		speedMult = 1.0,
-		damageMult = 1.0,
-		killReward = 10,
-		captureReward = 5,
-		captureRate = 0.40,    -- 40% probabilidad base
-		vaultValue = 5,
-		vaultIncome = 1,       -- Cells por intervalo de income
-		color = Color3.fromRGB(158, 158, 158),    -- Gris
+		order        = 1,
+		hpMult       = 1.0,
+		speedMult    = 1.0,
+		damageMult   = 1.0,
+		killReward   = 10,
+		captureBonus = 5,
+		captureRate  = 0.40,
+		vaultValue   = 5,
+		vaultIncome  = 1,
+		color        = Color3.fromRGB(170, 170, 170),
 		trailEnabled = false,
+		glowEnabled  = false,
 	},
-	Rare = {
-		order = 2,
-		hpMult = 1.5,
-		speedMult = 1.1,
-		damageMult = 1.3,
-		killReward = 25,
-		captureReward = 15,
-		captureRate = 0.28,    -- 28%
-		vaultValue = 15,
-		vaultIncome = 3,
-		color = Color3.fromRGB(76, 175, 80),      -- Verde
+	Gold = {
+		order        = 2,
+		hpMult       = 2.0,
+		speedMult    = 1.05,
+		damageMult   = 1.6,
+		killReward   = 40,
+		captureBonus = 25,
+		captureRate  = 0.20,
+		vaultValue   = 30,
+		vaultIncome  = 4,
+		color        = Color3.fromRGB(255, 193, 7),
 		trailEnabled = true,
+		glowEnabled  = true,
 	},
-	Elite = {
-		order = 3,
-		hpMult = 2.5,
-		speedMult = 1.2,
-		damageMult = 1.8,
-		killReward = 60,
-		captureReward = 40,
-		captureRate = 0.18,    -- 18%
-		vaultValue = 40,
-		vaultIncome = 6,
-		color = Color3.fromRGB(33, 150, 243),      -- Azul
+	Diamond = {
+		order        = 3,
+		hpMult       = 3.5,
+		speedMult    = 1.15,
+		damageMult   = 2.2,
+		killReward   = 100,
+		captureBonus = 60,
+		captureRate  = 0.10,
+		vaultValue   = 80,
+		vaultIncome  = 10,
+		color        = Color3.fromRGB(0, 229, 255),
 		trailEnabled = true,
+		glowEnabled  = true,
 	},
 }
 
--- Lista ordenada de rarezas para prioridad de robo (mayor valor primero)
-BrainrotConfig.RarityOrder = {"Elite", "Rare", "Normal"}
+-- Orden de robo (mayor valor primero)
+BrainrotConfig.RarityOrder = { "Diamond", "Gold", "Normal" }
 
--- Obtener stats finales de un brainrot dado clase + rareza
+-----------------------------------------------------------------------
+-- HELPER: stats finales de un brainrot
+-----------------------------------------------------------------------
 function BrainrotConfig.GetStats(className: string, rarityName: string)
-	local class = BrainrotConfig.Classes[className]
+	local class  = BrainrotConfig.Classes[className]
 	local rarity = BrainrotConfig.Rarities[rarityName]
 	if not class or not rarity then
-		warn("[BrainrotConfig] Clase o rareza inválida:", className, rarityName)
+		warn("[BrainrotConfig] Clase o rareza invalida:", className, rarityName)
 		return nil
 	end
-
 	return {
-		className = className,
-		rarityName = rarityName,
-		maxHP = math.floor(class.baseHP * rarity.hpMult),
-		speed = class.baseSpeed * rarity.speedMult,
-		barrierDamage = math.floor(class.baseBarrierDamage * rarity.damageMult),
-		size = class.size,
-		shape = class.shape,
-		killReward = rarity.killReward,
-		captureReward = rarity.captureReward,
-		captureRate = rarity.captureRate,
-		vaultValue = rarity.vaultValue,
-		vaultIncome = rarity.vaultIncome,
-		color = rarity.color,
-		trailEnabled = rarity.trailEnabled,
+		className     = className,
+		rarityName    = rarityName,
+		maxHP         = math.floor(class.baseHP * rarity.hpMult),
+		speed         = class.baseSpeed * rarity.speedMult,
+		barrierDamage = math.floor(class.baseDamage * rarity.damageMult),
+		size          = class.size,
+		shape         = class.shape,
+		killReward    = rarity.killReward,
+		captureBonus  = rarity.captureBonus,
+		captureRate   = rarity.captureRate,
+		vaultValue    = rarity.vaultValue,
+		vaultIncome   = rarity.vaultIncome,
+		color         = rarity.color,
+		trailEnabled  = rarity.trailEnabled,
+		glowEnabled   = rarity.glowEnabled,
+		stealTimeMult = class.stealTimeMult or 1.0,
 	}
 end
 

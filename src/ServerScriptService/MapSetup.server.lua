@@ -1,144 +1,126 @@
 -- MapSetup.server.lua
--- Auto-genera el mapa si no existe (para facilitar testing en Play Solo)
--- Ubicación: ServerScriptService/MapSetup (Script)
--- NOTA: Este script es solo para desarrollo. En producción, el mapa se crea en el editor.
+-- Auto-genera mapa completo para desarrollo (waypoints, build zones, base, iluminacion)
+-- Ubicación: ServerScriptService > MapSetup (Script)
+-- Si ya existe Workspace.Map con waypoints, no regenera.
+
+local Lighting = game:GetService("Lighting")
 
 local function CreateMap()
-	-- Si ya existe un mapa con waypoints, no generar
-	if workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("Path") then
-		local wp = workspace.Map.Path:FindFirstChild("Waypoints")
+	-- Guard: no regenerar si ya existe
+	if workspace:FindFirstChild("Map") then
+		local wp = workspace.Map:FindFirstChild("Path")
+			and workspace.Map.Path:FindFirstChild("Waypoints")
 		if wp and #wp:GetChildren() > 0 then
-			print("[MapSetup] Mapa existente detectado, saltando generación")
+			print("[MapSetup] Mapa existente, saltando")
 			return
 		end
 	end
 
-	print("[MapSetup] Generando mapa automático para desarrollo...")
+	print("[MapSetup] Generando mapa...")
 
-	-- Crear estructura
-	local map = Instance.new("Folder")
-	map.Name = "Map"
-	map.Parent = workspace
+	local map = Instance.new("Folder"); map.Name = "Map"; map.Parent = workspace
 
 	-- Suelo
 	local ground = Instance.new("Part")
 	ground.Name = "Ground"
-	ground.Size = Vector3.new(200, 1, 200)
-	ground.Position = Vector3.new(0, -0.5, 0)
+	ground.Size = Vector3.new(220, 1, 160)
+	ground.Position = Vector3.new(0, -0.5, 20)
 	ground.Anchored = true
+	ground.Color = Color3.fromRGB(30, 20, 40)
 	ground.Material = Enum.Material.Slate
-	ground.Color = Color3.fromRGB(35, 25, 45) -- Púrpura oscuro
 	ground.Parent = map
 
-	-- Path
-	local pathFolder = Instance.new("Folder")
-	pathFolder.Name = "Path"
-	pathFolder.Parent = map
+	-- Path folder
+	local pathFolder = Instance.new("Folder"); pathFolder.Name = "Path"; pathFolder.Parent = map
+	local wpFolder = Instance.new("Folder"); wpFolder.Name = "Waypoints"; wpFolder.Parent = pathFolder
 
-	local waypointsFolder = Instance.new("Folder")
-	waypointsFolder.Name = "Waypoints"
-	waypointsFolder.Parent = pathFolder
-
-	-- Waypoints (camino en forma de S)
-	local waypointPositions = {
-		Vector3.new(-80, 1, 0),
-		Vector3.new(-60, 1, 0),
-		Vector3.new(-40, 1, 0),
-		Vector3.new(-20, 1, 0),
-		Vector3.new(-20, 1, 20),
-		Vector3.new(-20, 1, 40),
-		Vector3.new(0, 1, 40),
-		Vector3.new(20, 1, 40),
-		Vector3.new(40, 1, 40),
-		Vector3.new(40, 1, 20),
-		Vector3.new(40, 1, 0),
-		Vector3.new(60, 1, 0),
+	-- 12 waypoints (camino en S)
+	local positions = {
+		Vector3.new(-80, 1, 0),   -- 1: spawn
+		Vector3.new(-60, 1, 0),   -- 2
+		Vector3.new(-40, 1, 0),   -- 3
+		Vector3.new(-20, 1, 0),   -- 4: curva
+		Vector3.new(-20, 1, 20),  -- 5
+		Vector3.new(-20, 1, 40),  -- 6
+		Vector3.new(0,   1, 40),  -- 7: curva
+		Vector3.new(20,  1, 40),  -- 8
+		Vector3.new(40,  1, 40),  -- 9
+		Vector3.new(40,  1, 20),  -- 10: curva
+		Vector3.new(40,  1, 0),   -- 11
+		Vector3.new(60,  1, 0),   -- 12: final -> barrera
 	}
 
-	for i, pos in ipairs(waypointPositions) do
+	for i, pos in ipairs(positions) do
 		local wp = Instance.new("Part")
 		wp.Name = tostring(i)
-		wp.Size = Vector3.new(2, 1, 2)
+		wp.Size = Vector3.new(2, 0.3, 2)
 		wp.Position = pos
 		wp.Anchored = true
 		wp.CanCollide = false
 		wp.Transparency = 0.7
-		wp.Color = Color3.fromRGB(213, 0, 249) -- Magenta
+		wp.Color = Color3.fromRGB(180, 0, 220)
 		wp.Material = Enum.Material.Neon
-		wp.Shape = Enum.PartType.Cylinder
-		wp.CFrame = CFrame.new(pos) * CFrame.Angles(0, 0, math.rad(90))
-		wp.Parent = waypointsFolder
+		wp.Parent = wpFolder
 	end
 
-	-- Crear visual del camino (parts conectando waypoints)
-	for i = 1, #waypointPositions - 1 do
-		local p1 = waypointPositions[i]
-		local p2 = waypointPositions[i + 1]
+	-- Segmentos visuales del camino
+	for i = 1, #positions - 1 do
+		local p1, p2 = positions[i], positions[i + 1]
 		local mid = (p1 + p2) / 2
-		local dist = (p2 - p1).Magnitude
+		local seg = Instance.new("Part")
+		seg.Name = "Seg_" .. i
+		seg.Anchored = true
+		seg.CanCollide = false
+		seg.Color = Color3.fromRGB(45, 25, 70)
+		seg.Material = Enum.Material.Cobblestone
+		seg.Transparency = 0.15
 
-		local pathPart = Instance.new("Part")
-		pathPart.Name = "PathSegment_" .. i
-		pathPart.Size = Vector3.new(dist, 0.2, 4)
-		pathPart.CFrame = CFrame.lookAt(mid, p2) * CFrame.new(0, 0, 0)
-		pathPart.Position = Vector3.new(mid.X, 0.1, mid.Z)
-		pathPart.Anchored = true
-		pathPart.CanCollide = false
-		pathPart.Color = Color3.fromRGB(49, 27, 146) -- Púrpura oscuro
-		pathPart.Material = Enum.Material.Cobblestone
-		pathPart.Transparency = 0.3
-
-		-- Orientar correctamente
-		local dir = (p2 - p1)
-		if dir.Magnitude > 0.1 then
-			pathPart.CFrame = CFrame.lookAt(Vector3.new(mid.X, 0.1, mid.Z), Vector3.new(p2.X, 0.1, p2.Z))
-			pathPart.Size = Vector3.new(4, 0.2, dist)
+		local delta = p2 - p1
+		if math.abs(delta.X) > math.abs(delta.Z) then
+			seg.Size = Vector3.new(math.abs(delta.X), 0.15, 5)
+		else
+			seg.Size = Vector3.new(5, 0.15, math.abs(delta.Z))
 		end
-
-		pathPart.Parent = pathFolder
+		seg.Position = Vector3.new(mid.X, 0.08, mid.Z)
+		seg.Parent = pathFolder
 	end
 
-	-- Build Zones (junto a los waypoints, offset perpendicular al camino)
-	local buildZonesFolder = Instance.new("Folder")
-	buildZonesFolder.Name = "BuildZones"
-	buildZonesFolder.Parent = map
+	-- Build zones (10)
+	local bzFolder = Instance.new("Folder"); bzFolder.Name = "BuildZones"; bzFolder.Parent = map
 
-	-- Posiciones de build zones (manualmente para buen gameplay)
-	local buildZonePositions = {
-		Vector3.new(-60, 0.1, 8),    -- Junto a WP 2
-		Vector3.new(-40, 0.1, -8),   -- Junto a WP 3
-		Vector3.new(-12, 0.1, 10),   -- Junto a WP 4-5
-		Vector3.new(-28, 0.1, 30),   -- Junto a WP 5
-		Vector3.new(-12, 0.1, 40),   -- Junto a WP 6-7
-		Vector3.new(10, 0.1, 48),    -- Junto a WP 7-8
-		Vector3.new(30, 0.1, 32),    -- Junto a WP 8-9
-		Vector3.new(48, 0.1, 30),    -- Junto a WP 9-10
-		Vector3.new(48, 0.1, 8),     -- Junto a WP 10-11
-		Vector3.new(50, 0.1, -8),    -- Junto a WP 11-12
+	local bzPositions = {
+		Vector3.new(-60, 0.1,  9),
+		Vector3.new(-40, 0.1, -9),
+		Vector3.new(-28, 0.1, 10),
+		Vector3.new(-28, 0.1, 32),
+		Vector3.new(-10, 0.1, 48),
+		Vector3.new(10,  0.1, 48),
+		Vector3.new(30,  0.1, 32),
+		Vector3.new(48,  0.1, 30),
+		Vector3.new(48,  0.1,  9),
+		Vector3.new(52,  0.1, -9),
 	}
 
-	for i, pos in ipairs(buildZonePositions) do
+	for i, pos in ipairs(bzPositions) do
 		local zone = Instance.new("Part")
 		zone.Name = "Zone_" .. string.format("%02d", i)
-		zone.Size = Vector3.new(6, 0.2, 6)
+		zone.Size = Vector3.new(6, 0.15, 6)
 		zone.Position = pos
 		zone.Anchored = true
 		zone.CanCollide = false
 		zone.Transparency = 0.5
-		zone.Color = Color3.fromRGB(0, 229, 255) -- Cyan
+		zone.Color = Color3.fromRGB(0, 200, 220)
 		zone.Material = Enum.Material.Neon
-		zone.Parent = buildZonesFolder
+		zone.Parent = bzFolder
 	end
 
 	-- Base
-	local baseFolder = Instance.new("Folder")
-	baseFolder.Name = "Base"
-	baseFolder.Parent = map
+	local baseFolder = Instance.new("Folder"); baseFolder.Name = "Base"; baseFolder.Parent = map
 
 	-- Barrera
 	local barrier = Instance.new("Part")
 	barrier.Name = "Barrier"
-	barrier.Size = Vector3.new(2, 12, 20)
+	barrier.Size = Vector3.new(2, 12, 22)
 	barrier.Position = Vector3.new(66, 6, 0)
 	barrier.Anchored = true
 	barrier.CanCollide = false
@@ -150,10 +132,10 @@ local function CreateMap()
 	-- Vault floor
 	local vault = Instance.new("Part")
 	vault.Name = "Vault"
-	vault.Size = Vector3.new(16, 0.5, 16)
-	vault.Position = Vector3.new(78, 0.25, 0)
+	vault.Size = Vector3.new(18, 0.4, 18)
+	vault.Position = Vector3.new(80, 0.2, 0)
 	vault.Anchored = true
-	vault.Color = Color3.fromRGB(0, 77, 64) -- Teal
+	vault.Color = Color3.fromRGB(0, 60, 50)
 	vault.Material = Enum.Material.DiamondPlate
 	vault.Parent = baseFolder
 
@@ -161,7 +143,7 @@ local function CreateMap()
 	local core = Instance.new("Part")
 	core.Name = "Core"
 	core.Size = Vector3.new(4, 4, 4)
-	core.Position = Vector3.new(78, 3, 0)
+	core.Position = Vector3.new(80, 3, 0)
 	core.Anchored = true
 	core.Shape = Enum.PartType.Ball
 	core.Color = Color3.new(1, 1, 1)
@@ -171,69 +153,51 @@ local function CreateMap()
 	local coreLight = Instance.new("PointLight")
 	coreLight.Color = Color3.fromRGB(0, 229, 255)
 	coreLight.Brightness = 3
-	coreLight.Range = 20
+	coreLight.Range = 25
 	coreLight.Parent = core
 
-	-- Crear folders para entidades activas
-	if not workspace:FindFirstChild("ActiveBrainrots") then
-		local f = Instance.new("Folder")
-		f.Name = "ActiveBrainrots"
-		f.Parent = workspace
-	end
-	if not workspace:FindFirstChild("ActiveDefenses") then
-		local f = Instance.new("Folder")
-		f.Name = "ActiveDefenses"
-		f.Parent = workspace
+	-- Entity folders
+	for _, name in ipairs({"ActiveBrainrots", "ActiveDefenses"}) do
+		if not workspace:FindFirstChild(name) then
+			local f = Instance.new("Folder"); f.Name = name; f.Parent = workspace
+		end
 	end
 
-	-- Iluminación
-	local lighting = game:GetService("Lighting")
-	lighting.Ambient = Color3.fromRGB(30, 20, 50)
-	lighting.OutdoorAmbient = Color3.fromRGB(40, 30, 60)
-	lighting.Brightness = 1
-	lighting.ClockTime = 22 -- Noche
-	lighting.FogEnd = 300
-	lighting.FogColor = Color3.fromRGB(10, 5, 20)
+	-----------------------------------------------------------------------
+	-- ILUMINACION
+	-----------------------------------------------------------------------
+	Lighting.Ambient = Color3.fromRGB(25, 15, 45)
+	Lighting.OutdoorAmbient = Color3.fromRGB(35, 25, 55)
+	Lighting.Brightness = 0.8
+	Lighting.ClockTime = 22
+	Lighting.FogEnd = 350
+	Lighting.FogColor = Color3.fromRGB(8, 4, 18)
 
-	-- Skybox oscuro (si no hay)
-	local sky = lighting:FindFirstChildOfClass("Sky")
-	if not sky then
-		sky = Instance.new("Sky")
-		sky.SkyboxBk = ""
-		sky.SkyboxDn = ""
-		sky.SkyboxFt = ""
-		sky.SkyboxLf = ""
-		sky.SkyboxRt = ""
-		sky.SkyboxUp = ""
+	-- Skybox
+	if not Lighting:FindFirstChildOfClass("Sky") then
+		local sky = Instance.new("Sky")
+		sky.SkyboxBk = ""; sky.SkyboxDn = ""; sky.SkyboxFt = ""
+		sky.SkyboxLf = ""; sky.SkyboxRt = ""; sky.SkyboxUp = ""
 		sky.StarCount = 3000
 		sky.CelestialBodiesShown = false
-		sky.Parent = lighting
+		sky.Parent = Lighting
 	end
 
-	-- Bloom para look premium
-	local bloom = lighting:FindFirstChildOfClass("BloomEffect")
-	if not bloom then
-		bloom = Instance.new("BloomEffect")
-		bloom.Intensity = 0.5
-		bloom.Size = 24
-		bloom.Threshold = 1.5
-		bloom.Parent = lighting
+	-- Post-processing
+	if not Lighting:FindFirstChildOfClass("BloomEffect") then
+		local bloom = Instance.new("BloomEffect")
+		bloom.Intensity = 0.4; bloom.Size = 24; bloom.Threshold = 1.5
+		bloom.Parent = Lighting
 	end
 
-	-- Color correction
-	local cc = lighting:FindFirstChildOfClass("ColorCorrectionEffect")
-	if not cc then
-		cc = Instance.new("ColorCorrectionEffect")
-		cc.TintColor = Color3.fromRGB(220, 210, 255)
-		cc.Contrast = 0.1
-		cc.Saturation = 0.2
-		cc.Parent = lighting
+	if not Lighting:FindFirstChildOfClass("ColorCorrectionEffect") then
+		local cc = Instance.new("ColorCorrectionEffect")
+		cc.TintColor = Color3.fromRGB(215, 205, 255)
+		cc.Contrast = 0.1; cc.Saturation = 0.15
+		cc.Parent = Lighting
 	end
 
-	print("[MapSetup] Mapa generado exitosamente")
-	print("  - 12 waypoints")
-	print("  - 10 zonas de construcción")
-	print("  - Base con barrera + bóveda + núcleo")
+	print("[MapSetup] Mapa generado: 12 wp, 10 zones, base completa")
 end
 
 CreateMap()
