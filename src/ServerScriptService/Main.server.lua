@@ -1,41 +1,71 @@
 -- Main.server.lua
--- Entry point del servidor: crea remotes, inicializa sistemas, game loop
+-- Bootstrap del servidor: crea remotes, asegura folders, prepara para managers
 -- Ubicación: ServerScriptService > Main (Script)
+--
+-- Esta es la primera capa. Solo hace:
+--   1. Crear folder de Events con todos los RemoteEvents/RemoteFunctions
+--   2. Asegurar que existan folders de runtime en Workspace
+--   3. Dejar stubs claros para donde se conectaran los managers
+--
+-- Los managers (WaveManager, BrainrotManager, etc.) se agregan en tandas posteriores.
+-- Este archivo se ira extendiendo a medida que se agreguen sistemas.
 
-local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Players = game:GetService("Players")
 
 print("=== PROTEGE TU BASE: BRAINROT SIEGE ===")
 print("[Main] Inicializando servidor...")
 
 -----------------------------------------------------------------------
--- 1. Crear estructura de Modules/Events si no existe
+-- UTILIDAD
 -----------------------------------------------------------------------
-local function EnsureFolder(parent, name)
-	local f = parent:FindFirstChild(name)
-	if not f then
-		f = Instance.new("Folder")
-		f.Name = name
-		f.Parent = parent
-	end
+local function EnsureFolder(parent: Instance, name: string): Folder
+	local existing = parent:FindFirstChild(name)
+	if existing then return existing end
+	local f = Instance.new("Folder")
+	f.Name = name
+	f.Parent = parent
 	return f
 end
 
+-----------------------------------------------------------------------
+-- 1. ESTRUCTURA DE FOLDERS EN REPLICATEDSTORAGE
+-----------------------------------------------------------------------
 EnsureFolder(ReplicatedStorage, "Modules")
+
 local eventsFolder = EnsureFolder(ReplicatedStorage, "Events")
 
-local remoteNames = {
-	"WaveStarted", "WaveEnded",
-	"BrainrotSpawned", "BrainrotDied", "BrainrotCaptured",
-	"BarrierUpdate", "BreachStarted", "BreachEnded", "BrainrotStolen",
-	"CellsUpdate", "GameOver",
-	"RequestPlaceDefense", "RequestSellDefense",
-	"RequestRepairBarrier", "RequestSkipTimer",
-	"DefensePlaced",
+-----------------------------------------------------------------------
+-- 2. REMOTE EVENTS
+-- Organizados por direccion y proposito.
+-- Server→Client: notificaciones de estado
+-- Client→Server: requests del jugador
+-----------------------------------------------------------------------
+
+-- Server → Client (notificaciones)
+local serverToClientEvents = {
+	"WaveStarted",       -- {waveNumber, totalWaves, waveName, isBoss, phase, buildDuration}
+	"WaveEnded",         -- {waveNumber, totalWaves, wasPerfect}
+	"BrainrotSpawned",   -- {id, class, rarity, isBoss}
+	"BrainrotDied",      -- {id}
+	"BrainrotCaptured",  -- {id, className, rarity, vaultValue, vaultCount, vaultMax}
+	"BarrierUpdate",     -- {currentHP, maxHP, percentage}
+	"BreachStarted",     -- {}
+	"BreachEnded",       -- {}
+	"BrainrotStolen",    -- {className, rarity, vaultValue, remainingInVault}
+	"CellsUpdate",       -- {cells}
+	"GameOver",          -- {result, reason, stats}
+	"DefensePlaced",     -- {id, defenseType, position, level}
 }
 
-for _, name in ipairs(remoteNames) do
+-- Client → Server (requests)
+local clientToServerEvents = {
+	"RequestPlaceDefense",   -- {defenseType, position}
+	"RequestSellDefense",    -- {defenseId}
+	"RequestRepairBarrier",  -- {}
+	"RequestSkipTimer",      -- {}
+}
+
+for _, name in ipairs(serverToClientEvents) do
 	if not eventsFolder:FindFirstChild(name) then
 		local e = Instance.new("RemoteEvent")
 		e.Name = name
@@ -43,74 +73,46 @@ for _, name in ipairs(remoteNames) do
 	end
 end
 
+for _, name in ipairs(clientToServerEvents) do
+	if not eventsFolder:FindFirstChild(name) then
+		local e = Instance.new("RemoteEvent")
+		e.Name = name
+		e.Parent = eventsFolder
+	end
+end
+
+-- RemoteFunctions (client pide, server responde)
 if not eventsFolder:FindFirstChild("GetGameState") then
 	local f = Instance.new("RemoteFunction")
 	f.Name = "GetGameState"
 	f.Parent = eventsFolder
 end
 
-print("[Main] Remotes creados")
+print("[Main] " .. #eventsFolder:GetChildren() .. " remotes creados en ReplicatedStorage.Events")
 
 -----------------------------------------------------------------------
--- 2. Cargar sistemas
+-- 3. FOLDERS DE RUNTIME EN WORKSPACE
+-- Los managers usaran estos folders para instanciar entidades.
 -----------------------------------------------------------------------
-local Systems = script.Parent.Systems
+EnsureFolder(workspace, "ActiveBrainrots")
+EnsureFolder(workspace, "ActiveDefenses")
 
-local BrainrotManager = require(Systems.BrainrotManager)
-local DefenseManager  = require(Systems.DefenseManager)
-local BaseManager     = require(Systems.BaseManager)
-local CaptureManager  = require(Systems.CaptureManager)
-local EconomyManager  = require(Systems.EconomyManager)
-local WaveManager     = require(Systems.WaveManager)
-local MatchManager    = require(Systems.MatchManager)
+print("[Main] Folders de runtime verificados")
 
 -----------------------------------------------------------------------
--- 3. Inicializar en orden
+-- 4. STUB: MANAGERS
+-- Los sistemas se agregaran aqui en tandas posteriores.
+-- El patron sera:
+--
+--   local BrainrotManager = require(script.Parent.Systems.BrainrotManager)
+--   local DefenseManager  = require(script.Parent.Systems.DefenseManager)
+--   ...
+--   BrainrotManager.Init()
+--   ...
+--   RunService.Heartbeat:Connect(function(dt)
+--       MatchManager.Update(dt)
+--   end)
 -----------------------------------------------------------------------
-BrainrotManager.Init()
-BaseManager.Init()
-EconomyManager.Init(BaseManager)
-CaptureManager.Init(BrainrotManager, BaseManager, EconomyManager)
-DefenseManager.Init(BrainrotManager, CaptureManager)
-WaveManager.Init(BrainrotManager)
-MatchManager.Init({
-	BrainrotManager = BrainrotManager,
-	DefenseManager  = DefenseManager,
-	BaseManager     = BaseManager,
-	CaptureManager  = CaptureManager,
-	EconomyManager  = EconomyManager,
-	WaveManager     = WaveManager,
-})
 
-print("[Main] Sistemas inicializados")
-
------------------------------------------------------------------------
--- 4. Game loop
------------------------------------------------------------------------
-RunService.Heartbeat:Connect(function(dt)
-	MatchManager.Update(dt)
-end)
-
------------------------------------------------------------------------
--- 5. Auto-start cuando entra un jugador
------------------------------------------------------------------------
-local started = false
-
-local function TryStart()
-	if started then return end
-	if #Players:GetPlayers() == 0 then return end
-	started = true
-	task.wait(3) -- dar tiempo al cliente para cargar
-	MatchManager.StartMatch()
-end
-
-Players.PlayerAdded:Connect(function()
-	if not started then task.spawn(TryStart) end
-end)
-
--- Para Play Solo (jugador ya existe al iniciar)
-if #Players:GetPlayers() > 0 then
-	task.spawn(TryStart)
-end
-
-print("[Main] Servidor listo, esperando jugadores...")
+print("[Main] Bootstrap completo. Esperando managers...")
+print("[Main] Servidor listo")

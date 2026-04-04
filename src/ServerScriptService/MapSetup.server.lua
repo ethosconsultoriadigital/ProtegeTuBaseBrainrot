@@ -1,7 +1,18 @@
 -- MapSetup.server.lua
--- Auto-genera mapa completo para desarrollo (waypoints, build zones, base, iluminacion)
+-- Auto-genera mapa graybox para desarrollo (waypoints, build zones, base, iluminacion)
 -- Ubicación: ServerScriptService > MapSetup (Script)
 -- Si ya existe Workspace.Map con waypoints, no regenera.
+--
+-- Genera en Workspace:
+--   Map/
+--     Ground            — suelo oscuro 220×160
+--     Path/Waypoints/   — 12 waypoints en S (nodos de navegacion para PathFollower)
+--     Path/Seg_*        — 11 segmentos visuales del camino
+--     BuildZones/       — 10 zonas de colocacion para defensas
+--     Base/Barrier      — barrera ForceField (HP en GameConfig)
+--     Base/Vault        — piso de boveda
+--     Base/Core         — nucleo luminoso (HP en GameConfig)
+--     SpawnPoint        — punto de aparicion de brainrots (waypoint 1)
 
 local Lighting = game:GetService("Lighting")
 
@@ -156,12 +167,17 @@ local function CreateMap()
 	coreLight.Range = 25
 	coreLight.Parent = core
 
-	-- Entity folders
-	for _, name in ipairs({"ActiveBrainrots", "ActiveDefenses"}) do
-		if not workspace:FindFirstChild(name) then
-			local f = Instance.new("Folder"); f.Name = name; f.Parent = workspace
-		end
-	end
+	-- SpawnPoint (donde nacen los brainrots, coincide con waypoint 1)
+	local spawnPoint = Instance.new("Part")
+	spawnPoint.Name = "SpawnPoint"
+	spawnPoint.Size = Vector3.new(6, 0.2, 6)
+	spawnPoint.Position = positions[1] + Vector3.new(0, -0.8, 0)
+	spawnPoint.Anchored = true
+	spawnPoint.CanCollide = false
+	spawnPoint.Transparency = 0.6
+	spawnPoint.Color = Color3.fromRGB(255, 0, 80)
+	spawnPoint.Material = Enum.Material.Neon
+	spawnPoint.Parent = map
 
 	-----------------------------------------------------------------------
 	-- ILUMINACION
@@ -197,7 +213,7 @@ local function CreateMap()
 		cc.Parent = Lighting
 	end
 
-	print("[MapSetup] Mapa generado: 12 wp, 10 zones, base completa")
+	print("[MapSetup] Mapa generado: 12 wp, 10 zones, base completa, spawn point listo")
 end
 
 CreateMap()
