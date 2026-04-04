@@ -1,6 +1,19 @@
 -- MatchManager
--- Orquestador principal: conecta sistemas, RemoteEvents, win/lose
+-- Orquestador principal: conecta BrainrotManager + WaveManager, win/lose, remotes
 -- Ubicación: ServerScriptService > Systems > MatchManager (ModuleScript)
+--
+-- Responsabilidades:
+--   - Iniciar partida cuando entra un jugador
+--   - Conectar callbacks entre managers
+--   - Manejar condicion basica de victoria/derrota
+--   - Conectar RemoteEvents del cliente
+--   - Llamar Update() de todos los subsistemas cada frame
+--
+-- Sistemas disponibles esta tanda: BrainrotManager, WaveManager
+-- Hooks preparados para: BaseManager, DefenseManager, EconomyManager, CaptureManager
+--
+-- NOTA: sin BaseManager, la condicion de derrota es "un brainrot llega al final".
+-- Con BaseManager se cambiara a "core destruido".
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
@@ -10,53 +23,79 @@ local EconomyConfig = require(ReplicatedStorage.Modules.EconomyConfig)
 
 local MatchManager = {}
 
--- Sistemas (inyectados)
-local BrainrotManager, DefenseManager, BaseManager = nil, nil, nil
-local CaptureManager, EconomyManager, WaveManager = nil, nil, nil
+-----------------------------------------------------------------------
+-- DEPENDENCIAS (inyectadas)
+-----------------------------------------------------------------------
+local BrainrotManager = nil
+local WaveManager     = nil
+-- FUTURO: DefenseManager, BaseManager, CaptureManager, EconomyManager
 local Events = nil
 
-local matchState = "WAITING" -- WAITING, PLAYING, VICTORY, DEFEAT
+-----------------------------------------------------------------------
+-- STATE
+-----------------------------------------------------------------------
+local matchState = "WAITING"  -- WAITING | PLAYING | VICTORY | DEFEAT
+local barrierHP = 9999        -- placeholder hasta que exista BaseManager
 local stats = {
-	totalKills   = 0,
-	totalCaptures = 0,
+	totalKills     = 0,
+	totalEscaped   = 0,
 	wavesCompleted = 0,
-	perfectWaves = 0,
-	vaultValue   = 0,
+	perfectWaves   = 0,
 }
 
-function MatchManager.Init(sys)
+-----------------------------------------------------------------------
+-- INIT
+-----------------------------------------------------------------------
+function MatchManager.Init(sys: {BrainrotManager: any, WaveManager: any})
 	BrainrotManager = sys.BrainrotManager
-	DefenseManager  = sys.DefenseManager
-	BaseManager     = sys.BaseManager
-	CaptureManager  = sys.CaptureManager
-	EconomyManager  = sys.EconomyManager
 	WaveManager     = sys.WaveManager
+	-- FUTURO: sys.DefenseManager, sys.BaseManager, etc.
 	Events = ReplicatedStorage:FindFirstChild("Events")
 
-	-- Callbacks
-	BrainrotManager.OnBrainrotDied(function(_id, brData, killedByDefense)
-		if killedByDefense then
+	-------------------------------------------------------------------
+	-- CALLBACK: brainrot muerto por daño
+	-------------------------------------------------------------------
+	BrainrotManager.OnBrainrotDied(function(_id, brData, killedByDamage)
+		if killedByDamage then
 			stats.totalKills += 1
-			EconomyManager.RewardKill(brData)
+			-- FUTURO: EconomyManager.RewardKill(brData)
+			print("[Match] Kill: " .. brData.className .. " " .. brData.rarityName
+				.. " (+$" .. brData.killReward .. ")")
 		end
 	end)
 
+	-------------------------------------------------------------------
+	-- CALLBACK: brainrot llego al final del camino
+	-------------------------------------------------------------------
 	BrainrotManager.OnBrainrotReachedEnd(function(_id, brData)
-		BaseManager.HandleBrainrotArrival(brData)
+		stats.totalEscaped += 1
+		-- FUTURO: BaseManager.HandleBrainrotArrival(brData)
+		-- Por ahora, simular dano a la barrera
+		barrierHP -= brData.barrierDamage
+		print("[Match] Brainrot llego al final! " .. brData.className .. " " .. brData.rarityName
+			.. " — Barrera: " .. barrierHP)
+
+		if barrierHP <= 0 and matchState == "PLAYING" then
+			MatchManager._End("DEFEAT", "barrier_destroyed")
+		end
 	end)
 
-	BaseManager.OnGameOver(function(reason)
-		MatchManager._End("DEFEAT", reason)
-	end)
-
+	-------------------------------------------------------------------
+	-- CALLBACK: oleada completada
+	-------------------------------------------------------------------
 	WaveManager.OnWaveComplete(function(waveNum, perfect)
 		stats.wavesCompleted = waveNum
 		if perfect then
 			stats.perfectWaves += 1
-			EconomyManager.RewardPerfectWave()
+			print("[Match] Oleada " .. waveNum .. " PERFECTA! (+$" .. EconomyConfig.PERFECT_WAVE_BONUS .. ")")
+			-- FUTURO: EconomyManager.RewardPerfectWave()
 		end
+		-- FUTURO: EconomyManager.RewardWaveClear()
 	end)
 
+	-------------------------------------------------------------------
+	-- CALLBACK: todas las oleadas completadas
+	-------------------------------------------------------------------
 	WaveManager.OnAllWavesComplete(function()
 		task.delay(3, function()
 			if matchState == "PLAYING" then
@@ -66,117 +105,120 @@ function MatchManager.Init(sys)
 	end)
 
 	MatchManager._ConnectRemotes()
+	print("[MatchManager] Init OK")
 end
 
 -----------------------------------------------------------------------
 -- REMOTE EVENTS
 -----------------------------------------------------------------------
 function MatchManager._ConnectRemotes()
-	-- Place defense
-	Events.RequestPlaceDefense.OnServerEvent:Connect(function(player, data)
-		if matchState ~= "PLAYING" then return end
-		if type(data) ~= "table" or not data.defenseType or not data.position then return end
+	if not Events then return end
 
-		local cost = DefenseManager.GetPlacementCost(data.defenseType)
-		if not EconomyManager.CanAfford(player, cost) then return end
-
-		local ok, err = DefenseManager.TryPlace(player, data.defenseType, data.position)
-		if ok then
-			EconomyManager.SpendCells(player, cost)
-		end
-	end)
-
-	-- Sell defense
-	Events.RequestSellDefense.OnServerEvent:Connect(function(player, data)
-		if matchState ~= "PLAYING" then return end
-		if type(data) ~= "table" or not data.defenseId then return end
-
-		local ok, refund = DefenseManager.TrySell(player, data.defenseId)
-		if ok then EconomyManager.AddCells(player, refund) end
-	end)
-
-	-- Repair barrier
-	Events.RequestRepairBarrier.OnServerEvent:Connect(function(player)
-		if matchState ~= "PLAYING" then return end
-		local cost = BaseManager.GetRepairCost()
-		if not EconomyManager.CanAfford(player, cost) then return end
-		local ok = BaseManager.TryRepairBarrier()
-		if ok then EconomyManager.SpendCells(player, cost) end
-	end)
-
-	-- Skip timer
+	-- Skip build timer
 	Events.RequestSkipTimer.OnServerEvent:Connect(function(_player)
 		if matchState ~= "PLAYING" then return end
 		WaveManager.SkipBuildTimer()
 	end)
 
-	-- Get game state
-	Events.GetGameState.OnServerInvoke = function(player)
+	-- FUTURO: RequestPlaceDefense, RequestSellDefense, RequestRepairBarrier
+	-- Se conectaran cuando existan DefenseManager y BaseManager
+
+	-- GetGameState
+	Events.GetGameState.OnServerInvoke = function(_player)
 		return {
 			matchState = matchState,
 			wave       = WaveManager.GetCurrentWave(),
-			totalWaves = WaveConfig and 8 or 8,
-			cells      = EconomyManager.GetCells(player),
-			barrierHP  = BaseManager.GetBarrierHP(),
-			barrierMax = BaseManager.GetBarrierMaxHP(),
-			breached   = BaseManager.IsBreached(),
-			vaultCount = BaseManager.GetVaultCount(),
-			vaultMax   = GameConfig.VAULT_MAX_SLOTS,
-			vault      = BaseManager.GetVault(),
+			waveState  = WaveManager.GetState(),
+			totalWaves = GameConfig.TOTAL_WAVES,
+			buildTimer = WaveManager.GetBuildTimer(),
+			barrierHP  = barrierHP,
+			barrierMax = GameConfig.BARRIER_MAX_HP,
+			stats      = stats,
+			-- FUTURO: cells, vaultCount, vaultMax, breached, defenses
 		}
 	end
 end
 
 -----------------------------------------------------------------------
--- START / END
+-- START
 -----------------------------------------------------------------------
 function MatchManager.StartMatch()
-	matchState = "PLAYING"
-	stats = { totalKills = 0, totalCaptures = 0, wavesCompleted = 0, perfectWaves = 0, vaultValue = 0 }
+	if matchState == "PLAYING" then return end
 
-	for _, p in ipairs(Players:GetPlayers()) do
-		EconomyManager.InitPlayer(p)
-	end
+	matchState = "PLAYING"
+	barrierHP = GameConfig.BARRIER_MAX_HP
+	stats = {
+		totalKills = 0, totalEscaped = 0,
+		wavesCompleted = 0, perfectWaves = 0,
+	}
+
+	print("[Match] === PARTIDA INICIADA ===")
+	print("[Match] Barrera: " .. barrierHP .. " HP")
+	print("[Match] Oleadas: " .. GameConfig.TOTAL_WAVES)
 
 	WaveManager.Start()
-	print("[Match] Partida iniciada!")
 end
 
+-----------------------------------------------------------------------
+-- END
+-----------------------------------------------------------------------
 function MatchManager._End(result: string, reason: string)
 	if matchState ~= "PLAYING" then return end
 	matchState = result
-	WaveManager.ForceStop()
-	stats.vaultValue = BaseManager.GetVaultTotalValue()
 
-	print("[Match] " .. result .. " - " .. reason)
-	print("  Kills: " .. stats.totalKills)
-	print("  Oleadas: " .. stats.wavesCompleted)
-	print("  Perfectas: " .. stats.perfectWaves)
-	print("  Boveda: " .. stats.vaultValue .. " pts")
+	WaveManager.ForceStop()
+
+	print("")
+	print("[Match] ============================")
+	print("[Match] " .. result .. " — " .. reason)
+	print("[Match] Kills: " .. stats.totalKills)
+	print("[Match] Escaparon: " .. stats.totalEscaped)
+	print("[Match] Oleadas: " .. stats.wavesCompleted .. "/" .. GameConfig.TOTAL_WAVES)
+	print("[Match] Perfectas: " .. stats.perfectWaves)
+	print("[Match] Barrera final: " .. math.max(0, barrierHP))
+	print("[Match] ============================")
+	print("")
 
 	if Events then
 		Events.GameOver:FireAllClients({
-			result = result, reason = reason, stats = stats,
+			result = result,
+			reason = reason,
+			stats  = stats,
 		})
 	end
 
+	-- Cleanup despues de un delay
 	task.delay(10, function()
 		BrainrotManager.ClearAll()
-		DefenseManager.ClearAll()
+		-- FUTURO: DefenseManager.ClearAll()
 	end)
 end
 
 -----------------------------------------------------------------------
--- UPDATE
+-- UPDATE (llamar cada frame desde Heartbeat)
 -----------------------------------------------------------------------
 function MatchManager.Update(dt: number)
 	if matchState ~= "PLAYING" then return end
+
 	BrainrotManager.Update(dt)
-	DefenseManager.Update(dt)
-	EconomyManager.Update(dt)
-	WaveManager.Update(dt, BaseManager.GetBarrierHP())
+	-- FUTURO: DefenseManager.Update(dt)
+	-- FUTURO: EconomyManager.Update(dt)
+	WaveManager.Update(dt, barrierHP)
 end
 
-function MatchManager.GetState() return matchState end
+-----------------------------------------------------------------------
+-- GETTERS
+-----------------------------------------------------------------------
+function MatchManager.GetState(): string
+	return matchState
+end
+
+function MatchManager.GetBarrierHP(): number
+	return barrierHP
+end
+
+function MatchManager.GetStats()
+	return stats
+end
 
 return MatchManager

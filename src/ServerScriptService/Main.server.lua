@@ -100,19 +100,62 @@ EnsureFolder(workspace, "ActiveDefenses")
 print("[Main] Folders de runtime verificados")
 
 -----------------------------------------------------------------------
--- 4. STUB: MANAGERS
--- Los sistemas se agregaran aqui en tandas posteriores.
--- El patron sera:
---
---   local BrainrotManager = require(script.Parent.Systems.BrainrotManager)
---   local DefenseManager  = require(script.Parent.Systems.DefenseManager)
---   ...
---   BrainrotManager.Init()
---   ...
---   RunService.Heartbeat:Connect(function(dt)
---       MatchManager.Update(dt)
---   end)
+-- 4. MANAGERS
+-- Cargar e inicializar sistemas en orden de dependencia.
+-- Tanda 3: BrainrotManager, WaveManager, MatchManager
+-- FUTURO: DefenseManager, BaseManager, CaptureManager, EconomyManager
 -----------------------------------------------------------------------
+local RunService = game:GetService("RunService")
+local Players    = game:GetService("Players")
 
-print("[Main] Bootstrap completo. Esperando managers...")
-print("[Main] Servidor listo")
+local Systems = script.Parent.Systems
+
+local BrainrotManager = require(Systems.BrainrotManager)
+local WaveManager     = require(Systems.WaveManager)
+local MatchManager    = require(Systems.MatchManager)
+-- FUTURO:
+-- local DefenseManager  = require(Systems.DefenseManager)
+-- local BaseManager     = require(Systems.BaseManager)
+-- local CaptureManager  = require(Systems.CaptureManager)
+-- local EconomyManager  = require(Systems.EconomyManager)
+
+-- Init en orden de dependencia
+BrainrotManager.Init()
+WaveManager.Init(BrainrotManager)
+MatchManager.Init({
+	BrainrotManager = BrainrotManager,
+	WaveManager     = WaveManager,
+})
+
+print("[Main] Managers inicializados")
+
+-----------------------------------------------------------------------
+-- 5. GAME LOOP
+-----------------------------------------------------------------------
+RunService.Heartbeat:Connect(function(dt)
+	MatchManager.Update(dt)
+end)
+
+-----------------------------------------------------------------------
+-- 6. AUTO-START cuando entra un jugador
+-----------------------------------------------------------------------
+local matchStarted = false
+
+local function TryStartMatch()
+	if matchStarted then return end
+	if #Players:GetPlayers() == 0 then return end
+	matchStarted = true
+	task.wait(2) -- dar tiempo al cliente para cargar
+	MatchManager.StartMatch()
+end
+
+Players.PlayerAdded:Connect(function()
+	if not matchStarted then task.spawn(TryStartMatch) end
+end)
+
+-- Play Solo: el jugador ya existe al iniciar el script
+if #Players:GetPlayers() > 0 then
+	task.spawn(TryStartMatch)
+end
+
+print("[Main] Servidor listo, esperando jugadores...")
