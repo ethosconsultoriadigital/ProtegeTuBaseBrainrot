@@ -372,6 +372,10 @@ function BrainrotManager.Update(dt: number)
 		if pf then
 			pf:Update(dt)
 
+			-- Sync position al data table (para que otros sistemas lean br.position)
+			local m = models[id]
+			if m then br.position = m.Position end
+
 			if pf:IsFinished() then
 				br.alive = false
 				for _, cb in ipairs(onReachedEndCallbacks) do cb(id, br) end

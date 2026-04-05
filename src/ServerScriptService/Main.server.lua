@@ -104,7 +104,7 @@ print("[Main] Folders de runtime verificados")
 -- Cargar e inicializar sistemas en orden de dependencia.
 -- Tanda 3: BrainrotManager, WaveManager, MatchManager
 -- Tanda 4: BaseManager, EconomyManager, CaptureManager
--- FUTURO: DefenseManager
+-- Tanda 5: DefenseManager
 -----------------------------------------------------------------------
 local RunService = game:GetService("RunService")
 local Players    = game:GetService("Players")
@@ -116,15 +116,15 @@ local WaveManager     = require(Systems.WaveManager)
 local BaseManager     = require(Systems.BaseManager)
 local EconomyManager  = require(Systems.EconomyManager)
 local CaptureManager  = require(Systems.CaptureManager)
+local DefenseManager  = require(Systems.DefenseManager)
 local MatchManager    = require(Systems.MatchManager)
--- FUTURO:
--- local DefenseManager  = require(Systems.DefenseManager)
 
 -- Init en orden de dependencia
 BrainrotManager.Init()
 BaseManager.Init()
 EconomyManager.Init(BaseManager)
 CaptureManager.Init(BrainrotManager, BaseManager, EconomyManager)
+DefenseManager.Init(BrainrotManager, CaptureManager)
 WaveManager.Init(BrainrotManager)
 MatchManager.Init({
 	BrainrotManager = BrainrotManager,
@@ -132,6 +132,7 @@ MatchManager.Init({
 	BaseManager     = BaseManager,
 	EconomyManager  = EconomyManager,
 	CaptureManager  = CaptureManager,
+	DefenseManager  = DefenseManager,
 })
 
 print("[Main] Managers inicializados")

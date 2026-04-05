@@ -9,9 +9,8 @@
 --   - Conectar RemoteEvents del cliente
 --   - Llamar Update() de todos los subsistemas cada frame
 --
--- Sistemas esta tanda: BrainrotManager, WaveManager, BaseManager,
---                       EconomyManager, CaptureManager
--- Hooks preparados para: DefenseManager
+-- Sistemas: BrainrotManager, WaveManager, BaseManager,
+--           EconomyManager, CaptureManager, DefenseManager
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
@@ -29,7 +28,7 @@ local WaveManager     = nil
 local BaseManager     = nil
 local EconomyManager  = nil
 local CaptureManager  = nil
--- FUTURO: DefenseManager
+local DefenseManager  = nil
 local Events = nil
 
 -----------------------------------------------------------------------
@@ -54,7 +53,7 @@ function MatchManager.Init(sys)
 	BaseManager     = sys.BaseManager
 	EconomyManager  = sys.EconomyManager
 	CaptureManager  = sys.CaptureManager
-	-- FUTURO: sys.DefenseManager
+	DefenseManager  = sys.DefenseManager
 	Events = ReplicatedStorage:FindFirstChild("Events")
 
 	-------------------------------------------------------------------
@@ -67,11 +66,13 @@ function MatchManager.Init(sys)
 		-- Recompensa económica por kill
 		EconomyManager.RewardKill(brData)
 
-		-- Auto-captura (probabilidad base de la rareza)
-		-- Se reemplazará por CaptureModule cuando exista DefenseManager
-		local captured = CaptureManager.TryAutoCapture(brData)
-		if captured then
-			stats.totalCaptures += 1
+		-- Auto-captura como fallback si no hay CaptureModules colocados
+		-- (CaptureModule de DefenseManager es el método principal de captura)
+		if DefenseManager.GetDefenseCount() == 0 then
+			local captured = CaptureManager.TryAutoCapture(brData)
+			if captured then
+				stats.totalCaptures += 1
+			end
 		end
 	end)
 
@@ -156,8 +157,32 @@ function MatchManager._ConnectRemotes()
 		end
 	end)
 
-	-- FUTURO: RequestPlaceDefense, RequestSellDefense
-	-- Se conectarán cuando exista DefenseManager
+	-- Place defense
+	Events.RequestPlaceDefense.OnServerEvent:Connect(function(player, data)
+		if matchState ~= "PLAYING" then return end
+		if type(data) ~= "table" or not data.defenseType or not data.position then return end
+
+		local cost = DefenseManager.GetPlacementCost(data.defenseType)
+		if not EconomyManager.CanAfford(player, cost) then return end
+
+		local ok, err = DefenseManager.TryPlace(player, data.defenseType, data.position)
+		if ok then
+			EconomyManager.SpendCells(player, cost)
+		else
+			warn("[Match] Placement rechazado: " .. (err or "unknown"))
+		end
+	end)
+
+	-- Sell defense
+	Events.RequestSellDefense.OnServerEvent:Connect(function(player, data)
+		if matchState ~= "PLAYING" then return end
+		if type(data) ~= "table" or not data.defenseId then return end
+
+		local ok, refund = DefenseManager.TrySell(player, data.defenseId)
+		if ok then
+			EconomyManager.AddCells(player, refund)
+		end
+	end)
 
 	-- GetGameState (RemoteFunction)
 	Events.GetGameState.OnServerInvoke = function(player)
@@ -176,6 +201,8 @@ function MatchManager._ConnectRemotes()
 			vaultCount = BaseManager.GetVaultCount(),
 			vaultMax   = GameConfig.VAULT_MAX_SLOTS,
 			vault      = BaseManager.GetVault(),
+			defenseCount = DefenseManager.GetDefenseCount(),
+			defenseMax   = GameConfig.MAX_DEFENSES,
 			stats      = stats,
 		}
 	end
@@ -249,7 +276,7 @@ function MatchManager._End(result: string, reason: string)
 	-- Cleanup después de un delay
 	task.delay(10, function()
 		BrainrotManager.ClearAll()
-		-- FUTURO: DefenseManager.ClearAll()
+		DefenseManager.ClearAll()
 	end)
 end
 
@@ -260,7 +287,7 @@ function MatchManager.Update(dt: number)
 	if matchState ~= "PLAYING" then return end
 
 	BrainrotManager.Update(dt)
-	-- FUTURO: DefenseManager.Update(dt)
+	DefenseManager.Update(dt)
 	EconomyManager.Update(dt)
 	WaveManager.Update(dt, BaseManager.GetBarrierHP())
 end
