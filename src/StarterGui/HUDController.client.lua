@@ -1,6 +1,14 @@
 -- HUDController.client.lua
 -- Crea y gestiona toda la UI del juego
--- Ubicación: StarterGui > GameHUD (ScreenGui) > HUDController (LocalScript)
+-- Ubicación: StarterGui > HUDController (LocalScript)
+--
+-- Crea un ScreenGui con:
+--   TopBar:     oleada, timer, cells, defensas
+--   StatusBar:  barra HP barrera, bóveda, hints
+--   Hotbar:     3 botones de defensas con highlight de selección
+--   Notifs:     notificaciones centrales con fade
+--   Breach:     overlay rojo pulsante durante brecha
+--   Results:    pantalla de victoria/derrota
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -13,23 +21,53 @@ local GameConfig     = require(Modules:WaitForChild("GameConfig"))
 local BrainrotConfig = require(Modules:WaitForChild("BrainrotConfig"))
 
 local player = Players.LocalPlayer
-local gui = script.Parent -- ScreenGui
+local playerGui = player:WaitForChild("PlayerGui")
+
+-----------------------------------------------------------------------
+-- SCREEN GUI
+-----------------------------------------------------------------------
+local gui = Instance.new("ScreenGui")
+gui.Name = "GameHUD"
+gui.ResetOnSpawn = false
+gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+gui.IgnoreGuiInset = true
+gui.Parent = playerGui
 
 -----------------------------------------------------------------------
 -- HELPERS
 -----------------------------------------------------------------------
-local function Corner(parent, r) local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, r or 8); c.Parent = parent end
-local function Pad(parent, t, b, l, r)
-	local p = Instance.new("UIPadding"); p.PaddingTop = UDim.new(0,t or 4); p.PaddingBottom = UDim.new(0,b or 4)
-	p.PaddingLeft = UDim.new(0,l or 8); p.PaddingRight = UDim.new(0,r or 8); p.Parent = parent
+local function Corner(parent, r)
+	local c = Instance.new("UICorner")
+	c.CornerRadius = UDim.new(0, r or 8)
+	c.Parent = parent
+end
+
+local function MakeLabel(props)
+	local lbl = Instance.new("TextLabel")
+	lbl.Size = props.Size or UDim2.new(0, 100, 0, 30)
+	lbl.Position = props.Position or UDim2.new(0, 0, 0, 0)
+	lbl.BackgroundTransparency = props.BgTransparency or 1
+	lbl.BackgroundColor3 = props.BgColor or Color3.new(0, 0, 0)
+	lbl.BorderSizePixel = 0
+	lbl.Text = props.Text or ""
+	lbl.TextColor3 = props.TextColor or Color3.new(1, 1, 1)
+	lbl.TextSize = props.TextSize or 14
+	lbl.Font = props.Font or Enum.Font.GothamBold
+	lbl.TextXAlignment = props.XAlign or Enum.TextXAlignment.Center
+	lbl.TextWrapped = true
+	lbl.Parent = props.Parent
+	if props.Corner then Corner(lbl, props.Corner) end
+	if props.ZIndex then lbl.ZIndex = props.ZIndex end
+	return lbl
 end
 
 -----------------------------------------------------------------------
--- TOP BAR
+-- TOP BAR (oleada, timer, cells, defensas)
 -----------------------------------------------------------------------
 local topBar = Instance.new("Frame")
 topBar.Name = "TopBar"
 topBar.Size = UDim2.new(1, 0, 0, 48)
+topBar.Position = UDim2.new(0, 0, 0, 0)
 topBar.BackgroundColor3 = Color3.fromRGB(12, 12, 22)
 topBar.BackgroundTransparency = 0.15
 topBar.BorderSizePixel = 0
@@ -39,38 +77,34 @@ local topLayout = Instance.new("UIListLayout")
 topLayout.FillDirection = Enum.FillDirection.Horizontal
 topLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 topLayout.VerticalAlignment = Enum.VerticalAlignment.Center
-topLayout.Padding = UDim.new(0, 30)
+topLayout.Padding = UDim.new(0, 24)
 topLayout.Parent = topBar
 
-local waveLabel = Instance.new("TextLabel")
-waveLabel.Size = UDim2.new(0, 260, 0, 38)
-waveLabel.BackgroundTransparency = 1
-waveLabel.Text = "ESPERANDO..."
-waveLabel.TextColor3 = Color3.fromRGB(0, 229, 255)
-waveLabel.TextSize = 20
-waveLabel.Font = Enum.Font.GothamBold
-waveLabel.Parent = topBar
+local waveLabel = MakeLabel({
+	Size = UDim2.new(0, 260, 0, 38), Text = "ESPERANDO...",
+	TextColor = Color3.fromRGB(0, 229, 255), TextSize = 20, Parent = topBar,
+})
 
-local timerLabel = Instance.new("TextLabel")
-timerLabel.Size = UDim2.new(0, 120, 0, 38)
-timerLabel.BackgroundTransparency = 1
-timerLabel.Text = ""
-timerLabel.TextColor3 = Color3.new(1, 1, 1)
-timerLabel.TextSize = 17
-timerLabel.Font = Enum.Font.GothamMedium
-timerLabel.Parent = topBar
+local timerLabel = MakeLabel({
+	Size = UDim2.new(0, 120, 0, 38), Text = "",
+	TextColor = Color3.new(1, 1, 1), TextSize = 17,
+	Font = Enum.Font.GothamMedium, Parent = topBar,
+})
 
-local cellsLabel = Instance.new("TextLabel")
-cellsLabel.Size = UDim2.new(0, 200, 0, 38)
-cellsLabel.BackgroundTransparency = 1
-cellsLabel.Text = "CELLS: " .. GameConfig.STARTING_CELLS
-cellsLabel.TextColor3 = Color3.fromRGB(255, 215, 0)
-cellsLabel.TextSize = 22
-cellsLabel.Font = Enum.Font.GothamBold
-cellsLabel.Parent = topBar
+local cellsLabel = MakeLabel({
+	Size = UDim2.new(0, 180, 0, 38),
+	Text = "CELLS: " .. GameConfig.STARTING_CELLS,
+	TextColor = Color3.fromRGB(255, 215, 0), TextSize = 22, Parent = topBar,
+})
+
+local defCountLabel = MakeLabel({
+	Size = UDim2.new(0, 130, 0, 38),
+	Text = "DEF: 0/" .. GameConfig.MAX_DEFENSES,
+	TextColor = Color3.fromRGB(180, 180, 200), TextSize = 15, Parent = topBar,
+})
 
 -----------------------------------------------------------------------
--- STATUS BAR (Barrera + Boveda + Repair hint)
+-- STATUS BAR (barrera HP + bóveda + hints)
 -----------------------------------------------------------------------
 local statusBar = Instance.new("Frame")
 statusBar.Size = UDim2.new(1, 0, 0, 38)
@@ -80,7 +114,7 @@ statusBar.BackgroundTransparency = 0.25
 statusBar.BorderSizePixel = 0
 statusBar.Parent = gui
 
--- Barrier bar
+-- Barrier HP bar
 local barrierFrame = Instance.new("Frame")
 barrierFrame.Size = UDim2.new(0.42, 0, 0, 26)
 barrierFrame.Position = UDim2.new(0.02, 0, 0, 6)
@@ -97,46 +131,37 @@ barrierFill.BorderSizePixel = 0
 barrierFill.Parent = barrierFrame
 Corner(barrierFill, 6)
 
-local barrierText = Instance.new("TextLabel")
-barrierText.Size = UDim2.new(1, 0, 1, 0)
-barrierText.BackgroundTransparency = 1
-barrierText.Text = "BARRERA: 100%"
-barrierText.TextColor3 = Color3.new(1, 1, 1)
-barrierText.TextSize = 13
-barrierText.Font = Enum.Font.GothamBold
-barrierText.ZIndex = 2
-barrierText.Parent = barrierFrame
+local barrierText = MakeLabel({
+	Size = UDim2.new(1, 0, 1, 0), Text = "BARRERA: 100%",
+	TextSize = 13, ZIndex = 2, Parent = barrierFrame,
+})
 
 -- Vault
-local vaultLabel = Instance.new("TextLabel")
-vaultLabel.Size = UDim2.new(0.22, 0, 0, 26)
-vaultLabel.Position = UDim2.new(0.46, 0, 0, 6)
-vaultLabel.BackgroundColor3 = Color3.fromRGB(0, 60, 50)
-vaultLabel.BorderSizePixel = 0
-vaultLabel.Text = "BOVEDA: 0/" .. GameConfig.VAULT_MAX_SLOTS
-vaultLabel.TextColor3 = Color3.fromRGB(0, 191, 165)
-vaultLabel.TextSize = 13
-vaultLabel.Font = Enum.Font.GothamBold
-vaultLabel.Parent = statusBar
-Corner(vaultLabel, 6)
+local vaultLabel = MakeLabel({
+	Size = UDim2.new(0.22, 0, 0, 26),
+	Position = UDim2.new(0.46, 0, 0, 6),
+	Text = "BOVEDA: 0/" .. GameConfig.VAULT_MAX_SLOTS,
+	TextColor = Color3.fromRGB(0, 191, 165), TextSize = 13,
+	BgTransparency = 0, BgColor = Color3.fromRGB(0, 60, 50),
+	Corner = 6, Parent = statusBar,
+})
 
--- Repair hint
-local repairHint = Instance.new("TextLabel")
-repairHint.Size = UDim2.new(0.28, 0, 0, 26)
-repairHint.Position = UDim2.new(0.70, 0, 0, 6)
-repairHint.BackgroundTransparency = 1
-repairHint.Text = "[R] Reparar barrera | [F] Saltar timer"
-repairHint.TextColor3 = Color3.fromRGB(150, 150, 170)
-repairHint.TextSize = 11
-repairHint.Font = Enum.Font.Gotham
-repairHint.Parent = statusBar
+-- Hints
+MakeLabel({
+	Size = UDim2.new(0.28, 0, 0, 26),
+	Position = UDim2.new(0.70, 0, 0, 6),
+	Text = "[R] Reparar  |  [F] Saltar timer",
+	TextColor = Color3.fromRGB(150, 150, 170), TextSize = 11,
+	Font = Enum.Font.Gotham, Parent = statusBar,
+})
 
 -----------------------------------------------------------------------
--- HOTBAR (Bottom)
+-- HOTBAR (3 defensas, bottom center)
 -----------------------------------------------------------------------
 local hotbar = Instance.new("Frame")
-hotbar.Size = UDim2.new(0, 380, 0, 75)
-hotbar.Position = UDim2.new(0.5, -190, 1, -88)
+hotbar.Name = "Hotbar"
+hotbar.Size = UDim2.new(0, 400, 0, 80)
+hotbar.Position = UDim2.new(0.5, -200, 1, -94)
 hotbar.BackgroundColor3 = Color3.fromRGB(12, 12, 22)
 hotbar.BackgroundTransparency = 0.1
 hotbar.BorderSizePixel = 0
@@ -149,7 +174,16 @@ hbLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 hbLayout.VerticalAlignment = Enum.VerticalAlignment.Center
 hbLayout.Padding = UDim.new(0, 10)
 hbLayout.Parent = hotbar
-Pad(hotbar, 6, 6, 10, 10)
+
+local hbPad = Instance.new("UIPadding")
+hbPad.PaddingTop = UDim.new(0, 6)
+hbPad.PaddingBottom = UDim.new(0, 6)
+hbPad.PaddingLeft = UDim.new(0, 10)
+hbPad.PaddingRight = UDim.new(0, 10)
+hbPad.Parent = hotbar
+
+-- Track hotbar buttons for selection highlight
+local hotbarButtons: {[string]: TextButton} = {}
 
 for i, defType in ipairs(DefenseConfig.HotbarOrder) do
 	local def = DefenseConfig.Defenses[defType]
@@ -157,20 +191,25 @@ for i, defType in ipairs(DefenseConfig.HotbarOrder) do
 
 	local btn = Instance.new("TextButton")
 	btn.Name = defType
-	btn.Size = UDim2.new(0, 108, 0, 58)
+	btn.Size = UDim2.new(0, 115, 0, 62)
 	btn.BackgroundColor3 = def.color
-	btn.BackgroundTransparency = 0.35
+	btn.BackgroundTransparency = 0.4
 	btn.BorderSizePixel = 0
 	btn.Text = "[" .. i .. "] " .. def.displayName .. "\n$" .. (stats and stats.cost or "?")
 	btn.TextColor3 = Color3.new(1, 1, 1)
-	btn.TextSize = 11
+	btn.TextSize = 12
 	btn.Font = Enum.Font.GothamBold
 	btn.TextWrapped = true
 	btn.Parent = hotbar
 	Corner(btn, 8)
 
+	hotbarButtons[defType] = btn
+
+	-- Click handler (usa el PlacementController del jugador)
 	btn.MouseButton1Click:Connect(function()
-		local PC = require(player.PlayerScripts:WaitForChild("Controllers"):WaitForChild("PlacementController"))
+		local PC = require(
+			player.PlayerScripts:WaitForChild("Controllers"):WaitForChild("PlacementController")
+		)
 		if PC.IsPlacing() and PC.GetSelectedType() == defType then
 			PC.CancelPlacing()
 		else
@@ -179,16 +218,41 @@ for i, defType in ipairs(DefenseConfig.HotbarOrder) do
 	end)
 end
 
+-- Selection highlight: listen to PlacementController
+task.spawn(function()
+	local PC = require(
+		player.PlayerScripts:WaitForChild("Controllers"):WaitForChild("PlacementController")
+	)
+	PC.OnSelectionChanged(function(selectedType)
+		for defType, btn in pairs(hotbarButtons) do
+			if defType == selectedType then
+				btn.BackgroundTransparency = 0.05
+				btn.BorderSizePixel = 3
+				btn.BorderColor3 = Color3.new(1, 1, 1)
+			else
+				btn.BackgroundTransparency = 0.4
+				btn.BorderSizePixel = 0
+			end
+		end
+	end)
+end)
+
+-- Selected defense label
+local selectedLabel = MakeLabel({
+	Size = UDim2.new(0, 300, 0, 18),
+	Position = UDim2.new(0.5, -150, 1, -100),
+	Text = "", TextColor = Color3.fromRGB(200, 200, 220),
+	TextSize = 12, Font = Enum.Font.GothamMedium, Parent = gui,
+})
+
 -- Controls hint
-local hint = Instance.new("TextLabel")
-hint.Size = UDim2.new(0, 350, 0, 16)
-hint.Position = UDim2.new(0.5, -175, 1, -14)
-hint.BackgroundTransparency = 1
-hint.Text = "WASD: Camara | Scroll: Zoom | Click: Colocar | ESC: Cancelar"
-hint.TextColor3 = Color3.fromRGB(110, 110, 130)
-hint.TextSize = 10
-hint.Font = Enum.Font.Gotham
-hint.Parent = gui
+MakeLabel({
+	Size = UDim2.new(0, 380, 0, 16),
+	Position = UDim2.new(0.5, -190, 1, -14),
+	Text = "WASD: Camara | Scroll: Zoom | Click: Colocar | ESC: Cancelar",
+	TextColor = Color3.fromRGB(110, 110, 130), TextSize = 10,
+	Font = Enum.Font.Gotham, Parent = gui,
+})
 
 -----------------------------------------------------------------------
 -- CENTER NOTIFICATION
@@ -219,7 +283,7 @@ local function Notify(text: string, color: Color3?, dur: number?)
 end
 
 -----------------------------------------------------------------------
--- BREACH OVERLAY
+-- BREACH OVERLAY (pantalla roja pulsante)
 -----------------------------------------------------------------------
 local breachOverlay = Instance.new("Frame")
 breachOverlay.Name = "BreachOverlay"
@@ -237,8 +301,8 @@ local breachPulsing = false
 -----------------------------------------------------------------------
 local resultsFrame = Instance.new("Frame")
 resultsFrame.Name = "Results"
-resultsFrame.Size = UDim2.new(0.45, 0, 0.48, 0)
-resultsFrame.Position = UDim2.new(0.275, 0, 0.26, 0)
+resultsFrame.Size = UDim2.new(0.45, 0, 0.5, 0)
+resultsFrame.Position = UDim2.new(0.275, 0, 0.25, 0)
 resultsFrame.BackgroundColor3 = Color3.fromRGB(12, 12, 28)
 resultsFrame.BackgroundTransparency = 0.05
 resultsFrame.BorderSizePixel = 0
@@ -247,15 +311,10 @@ resultsFrame.ZIndex = 10
 resultsFrame.Parent = gui
 Corner(resultsFrame, 14)
 
-local resultsTitle = Instance.new("TextLabel")
-resultsTitle.Size = UDim2.new(1, 0, 0, 55)
-resultsTitle.BackgroundTransparency = 1
-resultsTitle.Text = ""
-resultsTitle.TextColor3 = Color3.new(1, 1, 1)
-resultsTitle.TextSize = 34
-resultsTitle.Font = Enum.Font.GothamBold
-resultsTitle.ZIndex = 11
-resultsTitle.Parent = resultsFrame
+local resultsTitle = MakeLabel({
+	Size = UDim2.new(1, 0, 0, 55), Text = "",
+	TextSize = 34, ZIndex = 11, Parent = resultsFrame,
+})
 
 local resultsBody = Instance.new("TextLabel")
 resultsBody.Size = UDim2.new(0.85, 0, 0.65, 0)
@@ -275,7 +334,7 @@ resultsBody.Parent = resultsFrame
 -- EVENT HANDLERS
 -----------------------------------------------------------------------
 
--- Cells
+-- Cells update
 Events.CellsUpdate.OnClientEvent:Connect(function(data)
 	cellsLabel.Text = "CELLS: " .. tostring(data.cells)
 end)
@@ -283,7 +342,7 @@ end)
 -- Wave started
 Events.WaveStarted.OnClientEvent:Connect(function(data)
 	local txt = "OLEADA " .. data.waveNumber .. "/" .. data.totalWaves
-	if data.isBoss then txt = "!! BOSS !!" end
+	if data.isBoss then txt = "!! BOSS !! " .. (data.waveName or "") end
 	waveLabel.Text = txt
 
 	if data.phase == "BUILD" then
@@ -309,7 +368,7 @@ end)
 -- Barrier update
 Events.BarrierUpdate.OnClientEvent:Connect(function(data)
 	local pct = math.floor(data.percentage * 100)
-	barrierText.Text = "BARRERA: " .. pct .. "%"
+	barrierText.Text = "BARRERA: " .. data.currentHP .. "/" .. data.maxHP .. " (" .. pct .. "%)"
 	barrierFill.Size = UDim2.new(math.clamp(data.percentage, 0, 1), 0, 1, 0)
 
 	if data.percentage > 0.6 then
@@ -357,6 +416,17 @@ Events.BrainrotStolen.OnClientEvent:Connect(function(data)
 	vaultLabel.Text = "BOVEDA: " .. data.remainingInVault .. "/" .. GameConfig.VAULT_MAX_SLOTS
 end)
 
+-- Defense placed (update counter)
+Events.DefensePlaced.OnClientEvent:Connect(function(data)
+	-- Pedir estado actualizado para tener count correcto
+	task.spawn(function()
+		local state = Events.GetGameState:InvokeServer()
+		if state then
+			defCountLabel.Text = "DEF: " .. (state.defenseCount or 0) .. "/" .. GameConfig.MAX_DEFENSES
+		end
+	end)
+end)
+
 -- Game Over
 Events.GameOver.OnClientEvent:Connect(function(data)
 	resultsFrame.Visible = true
@@ -371,16 +441,63 @@ Events.GameOver.OnClientEvent:Connect(function(data)
 		resultsTitle.TextColor3 = Color3.fromRGB(255, 60, 60)
 	end
 
-	local s = data.stats
+	local s = data.stats or {}
 	resultsBody.Text = string.format(
-		"Oleadas completadas: %d\n" ..
-		"Oleadas perfectas: %d\n" ..
-		"Kills totales: %d\n" ..
-		"Valor de boveda: %d pts\n\n" ..
+		"Oleadas: %d/%d\n" ..
+		"Perfectas: %d\n" ..
+		"Kills: %d\n" ..
+		"Capturas: %d\n" ..
+		"Escaparon: %d\n" ..
+		"Valor boveda: %d pts\n\n" ..
 		"Razon: %s",
-		s.wavesCompleted, s.perfectWaves, s.totalKills,
-		s.vaultValue, data.reason or "---"
+		s.wavesCompleted or 0, GameConfig.TOTAL_WAVES,
+		s.perfectWaves or 0,
+		s.totalKills or 0,
+		s.totalCaptures or 0,
+		s.totalEscaped or 0,
+		s.vaultValue or 0,
+		data.reason or "---"
 	)
+end)
+
+-----------------------------------------------------------------------
+-- SELECTION LABEL UPDATE
+-----------------------------------------------------------------------
+task.spawn(function()
+	local PC = require(
+		player.PlayerScripts:WaitForChild("Controllers"):WaitForChild("PlacementController")
+	)
+	PC.OnSelectionChanged(function(selectedType)
+		if selectedType then
+			local def = DefenseConfig.Defenses[selectedType]
+			local stats = DefenseConfig.GetStats(selectedType, 1)
+			selectedLabel.Text = "Colocando: " .. (def and def.displayName or selectedType)
+				.. "  |  Rango: " .. (stats and stats.range or "?")
+				.. "  |  Costo: $" .. (stats and stats.cost or "?")
+		else
+			selectedLabel.Text = ""
+		end
+	end)
+end)
+
+-----------------------------------------------------------------------
+-- INITIAL SYNC (pedir estado al conectar)
+-----------------------------------------------------------------------
+task.spawn(function()
+	task.wait(1)
+	local ok, state = pcall(function()
+		return Events.GetGameState:InvokeServer()
+	end)
+	if ok and state then
+		cellsLabel.Text = "CELLS: " .. (state.cells or 0)
+		defCountLabel.Text = "DEF: " .. (state.defenseCount or 0) .. "/" .. GameConfig.MAX_DEFENSES
+		vaultLabel.Text = "BOVEDA: " .. (state.vaultCount or 0) .. "/" .. GameConfig.VAULT_MAX_SLOTS
+		if state.barrierHP and state.barrierMax and state.barrierMax > 0 then
+			local pct = state.barrierHP / state.barrierMax
+			barrierFill.Size = UDim2.new(math.clamp(pct, 0, 1), 0, 1, 0)
+			barrierText.Text = "BARRERA: " .. state.barrierHP .. "/" .. state.barrierMax
+		end
+	end
 end)
 
 print("[HUD] UI lista")

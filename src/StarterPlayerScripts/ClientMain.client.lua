@@ -1,6 +1,15 @@
 -- ClientMain.client.lua
--- Entry point cliente: input, hotkeys, event listeners
+-- Entry point del cliente: input, hotkeys, inicialización de controllers
 -- Ubicación: StarterPlayerScripts > ClientMain (LocalScript)
+--
+-- Controles:
+--   1/2/3     = Seleccionar defensa (toggle)
+--   Click     = Colocar defensa
+--   ESC       = Cancelar placement
+--   R         = Reparar barrera
+--   F         = Saltar build timer
+--   WASD      = Mover cámara
+--   Scroll    = Zoom
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
@@ -10,7 +19,8 @@ local player = Players.LocalPlayer
 local Events = ReplicatedStorage:WaitForChild("Events")
 local Modules = ReplicatedStorage:WaitForChild("Modules")
 
-require(Modules:WaitForChild("DefenseConfig")) -- precarga
+-- Precarga de configs
+require(Modules:WaitForChild("DefenseConfig"))
 require(Modules:WaitForChild("GameConfig"))
 
 local PlacementController = require(
@@ -38,7 +48,7 @@ local hotkeys = {
 UserInputService.InputBegan:Connect(function(input, processed)
 	if processed then return end
 
-	-- Defense hotkeys
+	-- Defense hotkeys (toggle)
 	local defType = hotkeys[input.KeyCode]
 	if defType then
 		if PlacementController.IsPlacing() and PlacementController.GetSelectedType() == defType then
@@ -65,7 +75,7 @@ UserInputService.InputBegan:Connect(function(input, processed)
 		return
 	end
 
-	-- R repair
+	-- R repair barrier
 	if input.KeyCode == Enum.KeyCode.R then
 		Events.RequestRepairBarrier:FireServer()
 		return
@@ -79,7 +89,7 @@ UserInputService.InputBegan:Connect(function(input, processed)
 end)
 
 -----------------------------------------------------------------------
--- EVENT LISTENERS (logs en consola, la UI los maneja en HUDController)
+-- EVENT LISTENERS (logs de consola — HUDController maneja la UI)
 -----------------------------------------------------------------------
 Events.BrainrotCaptured.OnClientEvent:Connect(function(data)
 	print("[Client] CAPTURA: " .. data.className .. " " .. data.rarity)
@@ -95,6 +105,14 @@ end)
 
 Events.BrainrotStolen.OnClientEvent:Connect(function(data)
 	print("[Client] ROBADO: " .. data.className .. " " .. data.rarity)
+end)
+
+Events.GameOver.OnClientEvent:Connect(function(data)
+	print("[Client] " .. data.result .. " — " .. data.reason)
+end)
+
+Events.DefensePlaced.OnClientEvent:Connect(function(data)
+	print("[Client] Defensa colocada: " .. data.defenseType .. " en " .. tostring(data.position))
 end)
 
 print("[Client] Listo")
