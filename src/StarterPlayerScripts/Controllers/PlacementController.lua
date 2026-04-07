@@ -35,7 +35,10 @@ local renderConn = nil
 local selectionCallbacks: {(defenseType: string?) -> ()} = {}
 
 function PlacementController.Init()
-	Events = ReplicatedStorage:WaitForChild("Events")
+	Events = ReplicatedStorage:WaitForChild("Events", 10)
+	if not Events then
+		warn("[PlacementController] ReplicatedStorage.Events no encontrado tras 10s")
+	end
 end
 
 function PlacementController.OnSelectionChanged(cb)
@@ -98,6 +101,11 @@ end
 
 function PlacementController.ConfirmPlacement()
 	if not isPlacing or not currentZone then return end
+	if not Events or not Events:FindFirstChild("RequestPlaceDefense") then
+		warn("[PlacementController] RequestPlaceDefense no disponible")
+		PlacementController.CancelPlacing()
+		return
+	end
 
 	-- Fire al servidor — validación real ocurre allá
 	Events.RequestPlaceDefense:FireServer({

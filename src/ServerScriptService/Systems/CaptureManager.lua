@@ -40,6 +40,12 @@ function CaptureManager.Init(brMgr, baseMgr, ecoMgr)
 	BaseManager     = baseMgr
 	EconomyManager  = ecoMgr
 	Events = ReplicatedStorage:FindFirstChild("Events")
+	if not Events then
+		warn("[CaptureManager] ReplicatedStorage.Events no encontrado — sin notificacion de capturas")
+	end
+	if not BrainrotManager or not BaseManager then
+		warn("[CaptureManager] Dependencias faltantes (BrainrotManager o BaseManager)")
+	end
 	totalCaptures = 0
 	print("[CaptureManager] Init OK")
 end

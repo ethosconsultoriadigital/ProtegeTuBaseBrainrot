@@ -100,7 +100,34 @@ EnsureFolder(workspace, "ActiveDefenses")
 print("[Main] Folders de runtime verificados")
 
 -----------------------------------------------------------------------
--- 4. MANAGERS
+-- 4. ESPERAR AL MAPA
+-- MapSetup.server.lua corre en paralelo y crea workspace.Map.
+-- Antes de inicializar BrainrotManager (que carga waypoints) debemos
+-- asegurarnos de que el mapa exista. Reintentamos hasta 10s para evitar
+-- bloquear si MapSetup falla.
+-----------------------------------------------------------------------
+local function WaitForMap(timeout: number): boolean
+	local t0 = os.clock()
+	while os.clock() - t0 < timeout do
+		local map = workspace:FindFirstChild("Map")
+		local path = map and map:FindFirstChild("Path")
+		local wps = path and path:FindFirstChild("Waypoints")
+		if wps and #wps:GetChildren() > 0 then
+			return true
+		end
+		task.wait(0.1)
+	end
+	return false
+end
+
+if not WaitForMap(10) then
+	warn("[Main] Mapa no encontrado tras 10s — los managers podrian fallar. ¿MapSetup.server.lua presente?")
+else
+	print("[Main] Mapa detectado, inicializando managers")
+end
+
+-----------------------------------------------------------------------
+-- 5. MANAGERS
 -- Cargar e inicializar sistemas en orden de dependencia.
 -- Tanda 3: BrainrotManager, WaveManager, MatchManager
 -- Tanda 4: BaseManager, EconomyManager, CaptureManager
@@ -109,15 +136,15 @@ print("[Main] Folders de runtime verificados")
 local RunService = game:GetService("RunService")
 local Players    = game:GetService("Players")
 
-local Systems = script.Parent.Systems
+local Systems = script.Parent:WaitForChild("Systems")
 
-local BrainrotManager = require(Systems.BrainrotManager)
-local WaveManager     = require(Systems.WaveManager)
-local BaseManager     = require(Systems.BaseManager)
-local EconomyManager  = require(Systems.EconomyManager)
-local CaptureManager  = require(Systems.CaptureManager)
-local DefenseManager  = require(Systems.DefenseManager)
-local MatchManager    = require(Systems.MatchManager)
+local BrainrotManager = require(Systems:WaitForChild("BrainrotManager"))
+local WaveManager     = require(Systems:WaitForChild("WaveManager"))
+local BaseManager     = require(Systems:WaitForChild("BaseManager"))
+local EconomyManager  = require(Systems:WaitForChild("EconomyManager"))
+local CaptureManager  = require(Systems:WaitForChild("CaptureManager"))
+local DefenseManager  = require(Systems:WaitForChild("DefenseManager"))
+local MatchManager    = require(Systems:WaitForChild("MatchManager"))
 
 -- Init en orden de dependencia
 BrainrotManager.Init()
@@ -138,14 +165,14 @@ MatchManager.Init({
 print("[Main] Managers inicializados")
 
 -----------------------------------------------------------------------
--- 5. GAME LOOP
+-- 6. GAME LOOP
 -----------------------------------------------------------------------
 RunService.Heartbeat:Connect(function(dt)
 	MatchManager.Update(dt)
 end)
 
 -----------------------------------------------------------------------
--- 6. AUTO-START cuando entra un jugador
+-- 7. AUTO-START cuando entra un jugador
 -----------------------------------------------------------------------
 local matchStarted = false
 

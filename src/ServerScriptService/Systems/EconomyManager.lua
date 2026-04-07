@@ -38,6 +38,12 @@ local vaultTimer = 0
 function EconomyManager.Init(baseMgr)
 	BaseManager = baseMgr
 	Events = ReplicatedStorage:FindFirstChild("Events")
+	if not Events then
+		warn("[EconomyManager] ReplicatedStorage.Events no encontrado — sin notificacion de cells")
+	end
+	if not BaseManager then
+		warn("[EconomyManager] BaseManager nil — ingreso pasivo deshabilitado")
+	end
 	vaultTimer = 0
 	print("[EconomyManager] Init OK")
 end

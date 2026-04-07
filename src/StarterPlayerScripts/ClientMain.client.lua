@@ -77,13 +77,17 @@ UserInputService.InputBegan:Connect(function(input, processed)
 
 	-- R repair barrier
 	if input.KeyCode == Enum.KeyCode.R then
-		Events.RequestRepairBarrier:FireServer()
+		if Events:FindFirstChild("RequestRepairBarrier") then
+			Events.RequestRepairBarrier:FireServer()
+		end
 		return
 	end
 
 	-- F skip build timer
 	if input.KeyCode == Enum.KeyCode.F then
-		Events.RequestSkipTimer:FireServer()
+		if Events:FindFirstChild("RequestSkipTimer") then
+			Events.RequestSkipTimer:FireServer()
+		end
 		return
 	end
 end)

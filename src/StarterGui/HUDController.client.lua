@@ -24,6 +24,26 @@ local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
 -----------------------------------------------------------------------
+-- PLACEMENT CONTROLLER (cargado una vez con espera + pcall)
+-----------------------------------------------------------------------
+local PlacementController = nil
+local function GetPC()
+	if PlacementController then return PlacementController end
+	local ok, mod = pcall(function()
+		local ps = player:WaitForChild("PlayerScripts", 10)
+		local controllers = ps and ps:WaitForChild("Controllers", 10)
+		local pcMod = controllers and controllers:WaitForChild("PlacementController", 10)
+		return pcMod and require(pcMod)
+	end)
+	if ok and mod then
+		PlacementController = mod
+		return PlacementController
+	end
+	warn("[HUD] No se pudo cargar PlacementController")
+	return nil
+end
+
+-----------------------------------------------------------------------
 -- SCREEN GUI
 -----------------------------------------------------------------------
 local gui = Instance.new("ScreenGui")
@@ -207,9 +227,8 @@ for i, defType in ipairs(DefenseConfig.HotbarOrder) do
 
 	-- Click handler (usa el PlacementController del jugador)
 	btn.MouseButton1Click:Connect(function()
-		local PC = require(
-			player.PlayerScripts:WaitForChild("Controllers"):WaitForChild("PlacementController")
-		)
+		local PC = GetPC()
+		if not PC then return end
 		if PC.IsPlacing() and PC.GetSelectedType() == defType then
 			PC.CancelPlacing()
 		else
@@ -220,9 +239,8 @@ end
 
 -- Selection highlight: listen to PlacementController
 task.spawn(function()
-	local PC = require(
-		player.PlayerScripts:WaitForChild("Controllers"):WaitForChild("PlacementController")
-	)
+	local PC = GetPC()
+	if not PC then return end
 	PC.OnSelectionChanged(function(selectedType)
 		for defType, btn in pairs(hotbarButtons) do
 			if defType == selectedType then
@@ -464,9 +482,8 @@ end)
 -- SELECTION LABEL UPDATE
 -----------------------------------------------------------------------
 task.spawn(function()
-	local PC = require(
-		player.PlayerScripts:WaitForChild("Controllers"):WaitForChild("PlacementController")
-	)
+	local PC = GetPC()
+	if not PC then return end
 	PC.OnSelectionChanged(function(selectedType)
 		if selectedType then
 			local def = DefenseConfig.Defenses[selectedType]
@@ -481,22 +498,31 @@ task.spawn(function()
 end)
 
 -----------------------------------------------------------------------
--- INITIAL SYNC (pedir estado al conectar)
+-- INITIAL SYNC (pedir estado al conectar, con reintentos)
 -----------------------------------------------------------------------
 task.spawn(function()
-	task.wait(1)
-	local ok, state = pcall(function()
-		return Events.GetGameState:InvokeServer()
-	end)
-	if ok and state then
-		cellsLabel.Text = "CELLS: " .. (state.cells or 0)
-		defCountLabel.Text = "DEF: " .. (state.defenseCount or 0) .. "/" .. GameConfig.MAX_DEFENSES
-		vaultLabel.Text = "BOVEDA: " .. (state.vaultCount or 0) .. "/" .. GameConfig.VAULT_MAX_SLOTS
-		if state.barrierHP and state.barrierMax and state.barrierMax > 0 then
-			local pct = state.barrierHP / state.barrierMax
-			barrierFill.Size = UDim2.new(math.clamp(pct, 0, 1), 0, 1, 0)
-			barrierText.Text = "BARRERA: " .. state.barrierHP .. "/" .. state.barrierMax
+	local state = nil
+	for attempt = 1, 8 do
+		task.wait(0.6)
+		local ok, result = pcall(function()
+			return Events.GetGameState:InvokeServer()
+		end)
+		if ok and result then
+			state = result
+			break
 		end
+	end
+	if not state then
+		warn("[HUD] No se pudo obtener estado inicial del servidor tras 8 intentos")
+		return
+	end
+	cellsLabel.Text = "CELLS: " .. (state.cells or 0)
+	defCountLabel.Text = "DEF: " .. (state.defenseCount or 0) .. "/" .. GameConfig.MAX_DEFENSES
+	vaultLabel.Text = "BOVEDA: " .. (state.vaultCount or 0) .. "/" .. GameConfig.VAULT_MAX_SLOTS
+	if state.barrierHP and state.barrierMax and state.barrierMax > 0 then
+		local pct = state.barrierHP / state.barrierMax
+		barrierFill.Size = UDim2.new(math.clamp(pct, 0, 1), 0, 1, 0)
+		barrierText.Text = "BARRERA: " .. state.barrierHP .. "/" .. state.barrierMax
 	end
 end)
 

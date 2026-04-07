@@ -50,10 +50,16 @@ function BaseManager.Init()
 	vault        = {}
 
 	Events = ReplicatedStorage:FindFirstChild("Events")
+	if not Events then
+		warn("[BaseManager] ReplicatedStorage.Events no encontrado — sin replicacion al cliente")
+	end
 
 	-- Buscar la Part de la barrera en el mapa para visual feedback
 	local base = workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("Base")
 	if base then barrierPart = base:FindFirstChild("Barrier") end
+	if not barrierPart then
+		warn("[BaseManager] Map.Base.Barrier no encontrado — sin feedback visual de la barrera")
+	end
 	BaseManager._UpdateBarrierVisual()
 
 	print("[BaseManager] Init OK — Barrera: " .. barrierHP .. " HP, Core: " .. coreHP .. " HP")

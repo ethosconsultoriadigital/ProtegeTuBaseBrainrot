@@ -47,12 +47,19 @@ function BrainrotManager.Init()
 		folder.Parent = workspace
 	end
 	Events = ReplicatedStorage:FindFirstChild("Events")
+	if not Events then
+		warn("[BrainrotManager] ReplicatedStorage.Events no encontrado — sin replicacion al cliente")
+	end
 	BrainrotManager._LoadWaypoints()
-	print("[BrainrotManager] Init OK — " .. #waypoints .. " waypoints")
+	if #waypoints < 2 then
+		warn("[BrainrotManager] Init con waypoints insuficientes (" .. #waypoints .. ") — Spawn fallara hasta que haya >= 2")
+	else
+		print("[BrainrotManager] Init OK — " .. #waypoints .. " waypoints")
+	end
 end
 
 function BrainrotManager._LoadWaypoints()
-	if waypointsLoaded then return end
+	if waypointsLoaded and #waypoints >= 2 then return end
 
 	local wpFolder = workspace:FindFirstChild("Map")
 		and workspace.Map:FindFirstChild("Path")
@@ -79,7 +86,9 @@ function BrainrotManager._LoadWaypoints()
 		i += 1
 	end
 
-	waypointsLoaded = true
+	if #waypoints >= 2 then
+		waypointsLoaded = true
+	end
 end
 
 -----------------------------------------------------------------------
@@ -102,8 +111,12 @@ function BrainrotManager.Spawn(className: string, rarityName: string, hpOverride
 		warn("[BrainrotManager] Stats invalidos para", className, rarityName)
 		return nil
 	end
+	-- Reintentar carga de waypoints (por si el mapa cargo despues de Init)
 	if #waypoints < 2 then
-		warn("[BrainrotManager] No hay waypoints suficientes")
+		BrainrotManager._LoadWaypoints()
+	end
+	if #waypoints < 2 then
+		warn("[BrainrotManager] No hay waypoints suficientes (Spawn cancelado: " .. className .. " " .. rarityName .. ")")
 		return nil
 	end
 

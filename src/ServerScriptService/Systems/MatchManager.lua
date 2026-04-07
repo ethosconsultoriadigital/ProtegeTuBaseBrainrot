@@ -55,6 +55,16 @@ function MatchManager.Init(sys)
 	CaptureManager  = sys.CaptureManager
 	DefenseManager  = sys.DefenseManager
 	Events = ReplicatedStorage:FindFirstChild("Events")
+	if not Events then
+		warn("[MatchManager] ReplicatedStorage.Events no encontrado — los remotes no funcionaran")
+	end
+
+	-- Limpiar economia cuando se va un jugador (una sola conexion para toda la sesion)
+	Players.PlayerRemoving:Connect(function(player)
+		if EconomyManager then
+			EconomyManager.CleanupPlayer(player)
+		end
+	end)
 
 	-------------------------------------------------------------------
 	-- WIRING: brainrot muerto por daño
@@ -138,7 +148,10 @@ end
 -- REMOTE EVENTS
 -----------------------------------------------------------------------
 function MatchManager._ConnectRemotes()
-	if not Events then return end
+	if not Events then
+		warn("[MatchManager] _ConnectRemotes: Events nil, omitiendo")
+		return
+	end
 
 	-- Skip build timer
 	Events.RequestSkipTimer.OnServerEvent:Connect(function(_player)
@@ -224,11 +237,6 @@ function MatchManager.StartMatch()
 	for _, p in ipairs(Players:GetPlayers()) do
 		EconomyManager.InitPlayer(p)
 	end
-
-	-- Limpiar jugadores que se van
-	Players.PlayerRemoving:Connect(function(player)
-		EconomyManager.CleanupPlayer(player)
-	end)
 
 	print("[Match] === PARTIDA INICIADA ===")
 	print("[Match] Barrera: " .. BaseManager.GetBarrierHP() .. "/" .. BaseManager.GetBarrierMaxHP())

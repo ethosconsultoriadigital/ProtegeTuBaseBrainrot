@@ -44,6 +44,13 @@ function DefenseManager.Init(brainrotMgr, captureMgr)
 	BrainrotManager = brainrotMgr
 	CaptureManager  = captureMgr
 
+	if not BrainrotManager then
+		warn("[DefenseManager] BrainrotManager nil — targeting deshabilitado")
+	end
+	if not CaptureManager then
+		warn("[DefenseManager] CaptureManager nil — CaptureModule no podra capturar")
+	end
+
 	folder = workspace:FindFirstChild("ActiveDefenses")
 	if not folder then
 		folder = Instance.new("Folder")
@@ -51,6 +58,15 @@ function DefenseManager.Init(brainrotMgr, captureMgr)
 		folder.Parent = workspace
 	end
 	Events = ReplicatedStorage:FindFirstChild("Events")
+	if not Events then
+		warn("[DefenseManager] ReplicatedStorage.Events no encontrado — sin notificacion de placement")
+	end
+
+	-- Verificar que existan BuildZones (sin esto, TryPlace siempre fallara)
+	local buildZones = workspace:FindFirstChild("Map") and workspace.Map:FindFirstChild("BuildZones")
+	if not buildZones or #buildZones:GetChildren() == 0 then
+		warn("[DefenseManager] Map.BuildZones no encontrado o vacio — no se podran colocar defensas")
+	end
 
 	print("[DefenseManager] Init OK")
 end

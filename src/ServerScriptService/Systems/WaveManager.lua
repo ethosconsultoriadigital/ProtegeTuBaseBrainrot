@@ -62,7 +62,13 @@ end
 -----------------------------------------------------------------------
 function WaveManager.Init(brMgr)
 	BrainrotManager = brMgr
+	if not BrainrotManager then
+		warn("[WaveManager] BrainrotManager nil — Spawn fallara")
+	end
 	Events = ReplicatedStorage:FindFirstChild("Events")
+	if not Events then
+		warn("[WaveManager] ReplicatedStorage.Events no encontrado — sin notificacion de oleadas al cliente")
+	end
 	print("[WaveManager] Init OK")
 end
 
