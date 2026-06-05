@@ -52,4 +52,41 @@ GameConfig.INFILTRATOR_STEAL_TIME  = 2.5  -- segundos para robar 1 brainrot
 -----------------------------------------------------------------------
 GameConfig.BUILD_ZONE_SNAP_RADIUS = 8  -- studs de distancia maxima para snap a zona
 
+-----------------------------------------------------------------------
+-- MAPA (Creator Store)
+-- MapSetup inserta este modelo al iniciar si el ID es > 0. Pon 0 para solo graybox.
+-- IDs: copia del recurso en tu inventario / Creator Store.
+-----------------------------------------------------------------------
+GameConfig.IMPORTED_MAP_ASSET_ID = 101491434169003 -- Mapa principal
+
+-----------------------------------------------------------------------
+-- TIENDA (modelo Shop — insertar manual en mapa o vía código cuando exista el manager)
+-----------------------------------------------------------------------
+GameConfig.ASSET_SHOP = 95566802299515
+
+-----------------------------------------------------------------------
+-- LUCKY BLOCKS (varios modelos; spawn / loot usará esta lista)
+-----------------------------------------------------------------------
+GameConfig.ASSET_LUCKY_BLOCK_PRIMARY = 136901876139141
+GameConfig.ASSET_LUCKY_BLOCK_SECONDARY = 93073400961159
+
+-- Lista para elegir al azar (ej. LuckyBlockManager)
+GameConfig.LUCKY_BLOCK_ASSET_IDS = {
+	136901876139141,
+	93073400961159,
+}
+
+-----------------------------------------------------------------------
+-- PACKS DE BRAINROTS (pool para drops / catálogo visual)
+-----------------------------------------------------------------------
+GameConfig.ASSET_PACK_BRAINROTS_1 = 98891498207178
+GameConfig.ASSET_PACK_BRAINROTS_2 = 72466520546640
+GameConfig.ASSET_PACK_BRAINROTS_3 = 84968460904245
+
+GameConfig.BRAINROT_PACK_ASSET_IDS = {
+	98891498207178,
+	72466520546640,
+	84968460904245,
+}
+
 return GameConfig
